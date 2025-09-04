@@ -1,0 +1,418 @@
+<!--
+Copyright © 2025 Parallax Project Management LTD. All Rights Reserved.
+This software/code may not be copied, distributed, or used without explicit written permission.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Saps Design App</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #f7f9fa; margin: 0; }
+    .container { max-width: 400px; margin: 0 auto; background: #fff; min-height: 100vh; box-shadow: 0 4px 24px #0002; }
+    header { background: #003366; color: #fff; padding: 18px 0; text-align: center; font-size: 1.35em; }
+    .content { padding: 24px; }
+    .input-group { margin-bottom: 18px; }
+    label { display: block; margin-bottom: 6px; color: #003366; font-weight: bold; }
+    input[type="text"], input[type="number"], input[type="password"], select { width: 100%; padding: 9px; border: 1px solid #bbb; border-radius: 6px; }
+    input[type="number"] { max-width: 120px; }
+    button { background: #003366; color: #fff; border: none; padding: 11px 0; width: 100%; border-radius: 6px; font-size: 1em; margin-top: 10px; cursor: pointer; }
+    button:active { background: #005599; }
+    .top-btn { background: #005599; color: #fff; border: none; padding: 7px 12px; border-radius: 5px; font-size: 0.95em; margin-left: 6px; cursor: pointer; }
+    .project-list { margin: 0; padding: 0; list-style: none; }
+    .project-list li { background: #f1f3f7; margin-bottom: 10px; padding: 10px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; }
+    .section-title { color: #003366; margin: 22px 0 14px 0; font-weight: bold; }
+    .summary { background: #e7f0fa; padding: 13px; border-radius: 7px; font-size: 1em; margin: 20px 0; }
+    .hidden { display: none; }
+    .upload-box { background: #f5fafc; border: 1px dashed #0067b8; padding: 12px 8px; border-radius: 7px; margin-bottom: 10px; }
+    .uploaded-file { font-size: 0.95em; color: #003366; margin: 5px 0 0 0; }
+    .uval-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px;}
+    .uval-row label {margin:0; font-weight:normal;}
+    .uval-row input[type="number"] {max-width:70px;}
+    .uval-row span {font-size:0.93em;color:#555;}
+    .windows-list {margin-bottom:10px;}
+    .window-row {display:flex;align-items:center;gap:5px;margin-bottom:4px;}
+    .window-row select, .window-row input {font-size:0.95em;padding:5px;}
+    .window-row button {background:#d33;color:#fff;padding:2px 7px;margin-left:3px;font-size:1em;}
+    .window-size-input {width:60px; margin-left:2px;}
+    .solar-pv-input {margin-top: 10px;}
+    .solar-pv-input label {margin-bottom: 2px;}
+    .labour-table, .materials-table, .total-table {margin:12px 0 0 0;font-size:0.98em;width:100%;border-collapse:collapse;}
+    .labour-table th, .labour-table td,
+    .materials-table th, .materials-table td,
+    .total-table th, .total-table td
+    {padding:4px 6px;border-bottom:1px solid #e6e6e6;text-align:left;}
+    .labour-table th, .materials-table th, .total-table th {background:#f5fafc;}
+    .labour-total-row td, .materials-total-row td, .total-table td {font-weight:bold;}
+    .profit-row td {color:#007a33;}
+    @media (max-width: 480px) {
+      .container { max-width: 100vw; min-height: 100vh; border-radius: 0; box-shadow: none; }
+      .content { padding: 16px; }
+      .labour-table, .materials-table, .total-table {font-size:0.93em;}
+    }
+    .upload-multifiles-note {font-size:0.95em; color:#005599;}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>Saps Design App</header>
+    <div class="content">
+      <!-- Login Screen -->
+      <form id="login-screen">
+        <div class="section-title">Login</div>
+        <div class="input-group">
+          <label for="email">Email</label>
+          <input type="text" id="email" autocomplete="username">
+        </div>
+        <div class="input-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" autocomplete="current-password">
+        </div>
+        <button type="submit">Login</button>
+      </form>
+      <!-- Project List -->
+      <div id="projects-screen" class="hidden">
+        <div class="section-title">My Projects</div>
+        <ul class="project-list" id="project-list"></ul>
+        <button onclick="showAddProject()">+ Add New Project</button>
+        <button class="top-btn" style="background:#aaa;" onclick="logout()">Log Out</button>
+      </div>
+      <!-- Add Project -->
+      <form id="add-project-screen" class="hidden">
+        <div class="section-title">New Project</div>
+        <div class="input-group">
+          <label for="pname">Project Name</label>
+          <input type="text" id="pname" required>
+        </div>
+        <div class="input-group">
+          <label for="paddr1">Address Line 1</label>
+          <input type="text" id="paddr1" required>
+        </div>
+        <div class="input-group">
+          <label for="paddr2">Address Line 2</label>
+          <input type="text" id="paddr2">
+        </div>
+        <div class="input-group">
+          <label for="paddr3">Town/City</label>
+          <input type="text" id="paddr3" required>
+        </div>
+        <div class="input-group">
+          <label for="ppostcode">Post Code</label>
+          <input type="text" id="ppostcode" required>
+        </div>
+        <div class="upload-box">
+          <label for="plans-upload-civils"><b>Upload Ground Works/Civils Plans:</b></label>
+          <input type="file" id="plans-upload-civils" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+          <div id="uploaded-files-list-civils"></div>
+        </div>
+        <div class="upload-box">
+          <label for="plans-upload-ground"><b>Upload Ground Floor Plans:</b></label>
+          <input type="file" id="plans-upload-ground" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+          <div id="uploaded-files-list-ground"></div>
+        </div>
+        <div class="upload-box">
+          <label for="plans-upload-first"><b>Upload First Floor Plans:</b></label>
+          <input type="file" id="plans-upload-first" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+          <div id="uploaded-files-list-first"></div>
+        </div>
+        <div class="upload-box">
+          <label for="plans-upload-spec"><b>Upload Project Specification:</b></label>
+          <input type="file" id="plans-upload-spec" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+          <div id="uploaded-files-list-spec"></div>
+        </div>
+        <div class="upload-multifiles-note" id="plans-message"></div>
+        <div id="plans-note" style="display:none; color:#005599; font-size:0.97em; margin-bottom:10px;">
+          <b>Fields will be auto-filled from uploaded plans/spec.</b>
+        </div>
+        <div class="input-group">
+          <label for="ptype">Project Type</label>
+          <select id="ptype" onchange="showStoreyOptions()">
+            <option value="new-build-house">New Build House</option>
+            <option value="extension">Extension</option>
+            <option value="bungalow">Bungalow</option>
+            <option value="3-storey-house">3 Storey House</option>
+            <option value="alteration">Alteration</option>
+          </select>
+        </div>
+        <div class="input-group" id="storeys-group" style="display:none;">
+          <label for="storeys">Number of Storeys</label>
+          <select id="storeys">
+            <option value="1">1 (Bungalow/Extension)</option>
+            <option value="2" selected>2 (Standard House)</option>
+            <option value="3">3</option>
+          </select>
+        </div>
+        <button type="submit">Create Project</button>
+        <button class="top-btn" type="button" onclick="showProjects()">Back</button>
+      </form>
+      <!-- Project Details + SAP Input -->
+      <form id="project-details-screen" class="hidden" autocomplete="off">
+        <div class="section-title" id="project-title"></div>
+        <div id="plans-note-details" style="display:none; color:#005599; font-size:0.97em; margin-bottom:10px;">
+          <b>Fields auto-filled from uploaded plans/spec.</b>
+        </div>
+        <div class="input-group">
+          <label for="ceiling-height">Ceiling Height (m)</label>
+          <input type="number" id="ceiling-height" min="2" max="5" step="0.01" value="2.4">
+        </div>
+        <div class="input-group">
+          <label for="floor-type">Floor Build-up</label>
+          <select id="floor-type" onchange="updateUValue('floor')"></select>
+          <div class="insulation-thick" id="floor-insul-group"></div>
+          <div class="uval-row">
+            <label>U-Value</label>
+            <input type="number" id="floor-uval" step="0.01" min="0.05" max="1" onchange="manualUValue('floor')">
+            <span id="floor-uval-ref"></span>
+          </div>
+          <label for="floor-area">Floor Area (m²)</label>
+          <input type="number" id="floor-area" min="1" value="60">
+        </div>
+        <div class="input-group">
+          <label for="wall-type">Wall Build-up</label>
+          <select id="wall-type" onchange="updateUValue('wall')"></select>
+          <div class="insulation-thick" id="wall-insul-group"></div>
+          <div class="uval-row">
+            <label>U-Value</label>
+            <input type="number" id="wall-uval" step="0.01" min="0.05" max="1" onchange="manualUValue('wall')">
+            <span id="wall-uval-ref"></span>
+          </div>
+          <label for="wall-area">Wall Area (m²)</label>
+          <input type="number" id="wall-area" min="1" value="120">
+        </div>
+        <div class="input-group">
+          <label for="roof-type">Roof Build-up</label>
+          <select id="roof-type" onchange="updateUValue('roof')"></select>
+          <div class="insulation-thick" id="roof-insul-group"></div>
+          <div class="uval-row">
+            <label>U-Value</label>
+            <input type="number" id="roof-uval" step="0.01" min="0.05" max="1" onchange="manualUValue('roof')">
+            <span id="roof-uval-ref"></span>
+          </div>
+          <label for="roof-area">Roof Area (m²)</label>
+          <input type="number" id="roof-area" min="1" value="80">
+        </div>
+        <div class="input-group">
+          <label for="doors">Front Door (for thermal bridging)</label>
+          <select id="doors">
+            <option>Standard uPVC</option>
+            <option>Composite</option>
+            <option>Timber</option>
+          </select>
+        </div>
+        <div class="input-group">
+          <label for="door-orient">Front Door Orientation</label>
+          <select id="door-orient">
+            <option>North</option>
+            <option>South</option>
+            <option>East</option>
+            <option>West</option>
+          </select>
+        </div>
+        <div class="input-group">
+          <label>Number of Rooms</label>
+          <input type="number" id="num-rooms" min="1" value="5">
+        </div>
+        <div class="input-group">
+          <label>Windows</label>
+          <div class="windows-list" id="windows-list"></div>
+          <button type="button" style="background:#007a33;" onclick="addWindow()">+ Add Window</button>
+        </div>
+        <div class="input-group solar-pv-input" id="solar-pv-group" style="display:none;">
+          <label for="solar-pv-size">Solar PV System Size (kWp)</label>
+          <input type="number" id="solar-pv-size" min="0" step="0.01" value="0">
+          <label for="solar-pv-kwh" style="margin-top:6px;">Estimated Annual Output (kWh)</label>
+          <input type="number" id="solar-pv-kwh" min="0" step="1" value="0">
+        </div>
+        <div class="input-group">
+          <label for="renewables">Renewable Energy</label>
+          <select id="renewables" onchange="showSolarPVInput()">
+            <option>None</option>
+            <option>Solar PV</option>
+            <option>Solar Thermal</option>
+            <option>Heat Pump</option>
+          </select>
+        </div>
+        <div class="input-group">
+          <label for="heating">Heating Source</label>
+          <select id="heating">
+            <option>Gas Boiler</option>
+            <option>ASHP (Air Source Heat Pump)</option>
+            <option>GSHP (Ground Source Heat Pump)</option>
+            <option>Electric</option>
+          </select>
+        </div>
+        <div class="input-group">
+          <label for="heating-kw">Heating System Output (kW)</label>
+          <input type="number" id="heating-kw" min="0" step="0.1" placeholder="e.g. 18">
+        </div>
+        <button type="button" onclick="generateReport()">Generate Reports</button>
+        <button class="top-btn" type="button" onclick="showProjects()">Back</button>
+      </form>
+      <!-- Reports Screen -->
+      <div id="reports-screen" class="hidden">
+        <div class="section-title">Reports</div>
+        <div class="summary" id="report-summary"></div>
+        <button onclick="showProjects()">Back to Projects</button>
+        <div style="margin-top: 18px;">
+          <h3 style="color:#003366;">Materials List Generator</h3>
+          <p style="margin-bottom:8px;">Generate a basic materials list for quoting from a building supplier:</p>
+          <button onclick="generateMaterialsList(true)" type="button" style="background:#007a33;">Generate Materials List</button>
+          <button onclick="emailMaterialsQuote()" type="button" style="background:#005599;">Get Materials Quote</button>
+          <div id="materials-list-output" style="margin-top:12px; background:#e7f0fa; border-radius:6px; padding:10px; font-size:0.97em; display:none;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+<script>
+// Copyright © 2025 Parallax Project Management LTD. All Rights Reserved.
+
+// --- LocalStorage Persistence Helper Functions ---
+function saveProjectsToStorage() {
+  try {
+    localStorage.setItem('saps_projects', JSON.stringify(projects));
+  } catch(e) { alert('Failed to save!'); }
+}
+function loadProjectsFromStorage() {
+  try {
+    const data = localStorage.getItem('saps_projects');
+    if (data) projects = JSON.parse(data);
+    else projects = [];
+  } catch(e) { projects = []; }
+}
+
+const UVALS = {
+  floor: [
+    {name: "Solid Concrete + 100mm Insulation", u: 0.16, insulation: "100mm"},
+    {name: "Solid Concrete + 150mm Insulation", u: 0.13, insulation: "150mm"},
+    {name: "Suspended Timber + 200mm Insulation", u: 0.12, insulation: "200mm"},
+    {name: "Beam & Block + 100mm Insulation", u: 0.18, insulation: "100mm"},
+    {name: "Beam & Block + 150mm Insulation", u: 0.16, insulation: "150mm"}
+  ],
+  wall: [
+    {name: "Cavity Wall (Brick + Block + 100mm Insulation)", u: 0.18, insulation: "100mm"},
+    {name: "Cavity Wall (Brick + Block + 150mm Insulation)", u: 0.15, insulation: "150mm"},
+    {name: "Timber Frame (with 150mm Insulation)", u: 0.16, insulation: "150mm"},
+    {name: "SIP Panel + 200mm Insulation", u: 0.13, insulation: "200mm"}
+  ],
+  roof: [
+    {name: "Pitched Roof (Insulation at Ceiling, 200mm)", u: 0.14, insulation: "200mm"},
+    {name: "Pitched Roof (Insulation at Rafter, 150mm)", u: 0.16, insulation: "150mm"},
+    {name: "Flat Roof (Warm Roof, 150mm)", u: 0.18, insulation: "150mm"},
+    {name: "Flat Roof (Warm Roof, 100mm)", u: 0.22, insulation: "100mm"}
+  ]
+};
+const WINDOW_TYPES = [
+  { value: "Double Glazed", label: "Double Glazed (U=2.8 W/m²K)", u: 2.8 },
+  { value: "Low E Double Glazed", label: "Low E Double Glazed (U=1.6 W/m²K)", u: 1.6 },
+  { value: "Triple Glazed", label: "Triple Glazed (U=1.0 W/m²K)", u: 1.0 },
+  { value: "Secondary Glazing", label: "Secondary Glazing (U=2.0 W/m²K)", u: 2.0 },
+  { value: "Single Glazed", label: "Single Glazed (U=4.8 W/m²K)", u: 4.8 }
+];
+const MATERIAL_PRICES = {
+  "Floor Insulation": 13, "Concrete/floor slab (ground floor)": 120, "Damp proof membrane": 4,
+  "Sand (floor slab)": 3.5, "Cement (floor slab)": 6, "Wall Insulation": 14,
+  "Bricks (outer leaf)": 1.1, "Concrete blocks (inner leaf)": 1.2, "Wall ties": 0.15,
+  "Cavity closers": 4, "Sand (mortar)": 3.5, "Cement (mortar)": 6,
+  "Timber frame kit": 45, "OSB/sheathing": 6, "External cladding/render": 25,
+  "SIP panels": 60, "Panel fixings/plates": 0, "Roof Insulation": 13,
+  "Roof covering (tiles/membrane)": 20, "Roof underlay/battens": 4, "Gutters": 7,
+  "Fascia boards": 8, "Soffit boards": 7, 
+  "Stairs": 800,
+  "1st fix plumbing": 500,
+  "2nd fix plumbing": 600,
+  "Radiator": 150,
+  "1st fix electrics": 400,
+  "2nd fix electrics": 300,
+  "Socket": 25,
+  "LED downlight": 20,
+  "EV charger": 1200,
+  "Joinery": 1200,
+  "Ironmongery": 300,
+  "Window": 260, "Front door (with frame/threshold/locking)": 600,
+  "Solar PV panels": 700, "PV inverter/mount/cabling": 0,
+  "Plasterboard/internal wall finish": 4,
+  "Ceiling board": 4,
+  "Skirting & architrave": 6,
+  "Wall paint": 25,
+  "Ceiling paint": 20,
+  "Plaster (skim)": 5
+};
+
+function getMaterialPrice(item, qty) {
+  for (let k in MATERIAL_PRICES) if (item.startsWith(k)) return MATERIAL_PRICES[k]*qty;
+  if (/^Window \d+/.test(item)) return MATERIAL_PRICES["Window"] * qty;
+  return 0;
+}
+
+let projects = [], currentProject = null, uvalManual = {floor: false, wall: false, roof: false}, windowsData = [], uploadedPlans = {
+  civils: null,
+  ground: null,
+  first: null,
+  spec: null
+};
+
+document.addEventListener("DOMContentLoaded", function() {
+  loadProjectsFromStorage();
+  showScreen('login-screen');
+});
+
+function showScreen(id) {
+  document.querySelectorAll('.content > *').forEach(e => e.classList.add('hidden'));
+  document.getElementById(id).classList.remove('hidden');
+}
+document.getElementById('login-screen').onsubmit = function(e) {
+  e.preventDefault();
+  showProjects();
+};
+
+function showProjects() {
+  saveProjectsToStorage();
+  const list = document.getElementById('project-list');
+  list.innerHTML = '';
+  projects.forEach((p, idx) => {
+    let addressFull = [p.address1, p.address2, p.address3].filter(Boolean).join(', ');
+    const li = document.createElement('li');
+    li.innerHTML = `<span>
+    <b>${p.name}</b><br>
+    <span style="font-size:0.93em">${addressFull} (${p.postcode})</span>
+    </span>
+    <button class="top-btn" onclick="editProject(${idx})">Open</button>`;
+    list.appendChild(li);
+  });
+  showScreen('projects-screen');
+}
+function showAddProject() {
+  document.getElementById('pname').value = '';
+  document.getElementById('paddr1').value = '';
+  document.getElementById('paddr2').value = '';
+  document.getElementById('paddr3').value = '';
+  document.getElementById('ppostcode').value = '';
+  document.getElementById('ptype').value = 'new-build-house';
+  showStoreyOptions();
+  showScreen('add-project-screen');
+}
+document.getElementById('add-project-screen').onsubmit = function(e) {
+  e.preventDefault();
+  const pname = document.getElementById('pname').value;
+  const paddr1 = document.getElementById('paddr1').value;
+  const paddr2 = document.getElementById('paddr2').value;
+  const paddr3 = document.getElementById('paddr3').value;
+  const ppostcode = document.getElementById('ppostcode').value;
+  const ptype = document.getElementById('ptype').options[document.getElementById('ptype').selectedIndex].text;
+  const storeys = document.getElementById('storeys').value;
+  projects.push({ name: pname, address1: paddr1, address2: paddr2, address3: paddr3, postcode: ppostcode, type: ptype, storeys: storeys, plans: {...uploadedPlans} });
+  uploadedPlans = { civils: null, ground: null, first: null, spec: null };
+  document.getElementById('uploaded-files-list-civils').innerHTML = '';
+  document.getElementById('uploaded-files-list-ground').innerHTML = '';
+  document.getElementById('uploaded-files-list-first').innerHTML = '';
+  document.getElementById('uploaded-files-list-spec').innerHTML = '';
+  document.getElementById('plans-message').textContent = '';
+  document.getElementById('plans-note').style.display = 'none';
+  saveProjectsToStorage();
+  showProjects();
+};
+// ...rest of your code unchanged...
+</script>
+</body>
+</html>
