@@ -58,6 +58,7 @@ This software/code may not be copied, distributed, or used without explicit writ
   <div class="container">
     <header>Saps Design App</header>
     <div class="content">
+
       <!-- Login Screen -->
       <form id="login-screen">
         <div class="section-title">Login</div>
@@ -71,6 +72,7 @@ This software/code may not be copied, distributed, or used without explicit writ
         </div>
         <button type="submit">Login</button>
       </form>
+
       <!-- Project List -->
       <div id="projects-screen" class="hidden">
         <div class="section-title">My Projects</div>
@@ -78,6 +80,7 @@ This software/code may not be copied, distributed, or used without explicit writ
         <button onclick="showAddProject()">+ Add New Project</button>
         <button class="top-btn" style="background:#aaa;" onclick="logout()">Log Out</button>
       </div>
+
       <!-- Add Project -->
       <form id="add-project-screen" class="hidden">
         <div class="section-title">New Project</div>
@@ -146,6 +149,7 @@ This software/code may not be copied, distributed, or used without explicit writ
         <button type="submit">Create Project</button>
         <button class="top-btn" type="button" onclick="showProjects()">Back</button>
       </form>
+
       <!-- Project Details + SAP Input -->
       <form id="project-details-screen" class="hidden" autocomplete="off">
         <div class="section-title" id="project-title"></div>
@@ -249,6 +253,7 @@ This software/code may not be copied, distributed, or used without explicit writ
         <button type="button" onclick="generateReport()">Generate Reports</button>
         <button class="top-btn" type="button" onclick="showProjects()">Back</button>
       </form>
+
       <!-- Reports Screen -->
       <div id="reports-screen" class="hidden">
         <div class="section-title">Reports</div>
@@ -266,20 +271,6 @@ This software/code may not be copied, distributed, or used without explicit writ
   </div>
 <script>
 // Copyright © 2025 Parallax Project Management LTD. All Rights Reserved.
-
-// --- LocalStorage Persistence Helper Functions ---
-function saveProjectsToStorage() {
-  try {
-    localStorage.setItem('saps_projects', JSON.stringify(projects));
-  } catch(e) { alert('Failed to save!'); }
-}
-function loadProjectsFromStorage() {
-  try {
-    const data = localStorage.getItem('saps_projects');
-    if (data) projects = JSON.parse(data);
-    else projects = [];
-  } catch(e) { projects = []; }
-}
 
 const UVALS = {
   floor: [
@@ -352,22 +343,18 @@ let projects = [], currentProject = null, uvalManual = {floor: false, wall: fals
   spec: null
 };
 
-document.addEventListener("DOMContentLoaded", function() {
-  loadProjectsFromStorage();
-  showScreen('login-screen');
-});
-
 function showScreen(id) {
   document.querySelectorAll('.content > *').forEach(e => e.classList.add('hidden'));
   document.getElementById(id).classList.remove('hidden');
 }
+document.addEventListener("DOMContentLoaded", function() { showScreen('login-screen'); });
+
 document.getElementById('login-screen').onsubmit = function(e) {
   e.preventDefault();
   showProjects();
 };
 
 function showProjects() {
-  saveProjectsToStorage();
   const list = document.getElementById('project-list');
   list.innerHTML = '';
   projects.forEach((p, idx) => {
@@ -409,10 +396,419 @@ document.getElementById('add-project-screen').onsubmit = function(e) {
   document.getElementById('uploaded-files-list-spec').innerHTML = '';
   document.getElementById('plans-message').textContent = '';
   document.getElementById('plans-note').style.display = 'none';
-  saveProjectsToStorage();
   showProjects();
 };
-// ...rest of your code unchanged...
+function logout() { showScreen('login-screen'); }
+function showStoreyOptions() {
+  var ptype = document.getElementById('ptype').value;
+  var storeyGroup = document.getElementById('storeys-group');
+  var storeys = document.getElementById('storeys');
+  if (ptype === "new-build-house" || ptype === "3-storey-house" || ptype === "extension" || ptype === "bungalow") {
+    storeyGroup.style.display = '';
+    if (ptype === "3-storey-house") { storeys.value = "3"; }
+    else if (ptype === "new-build-house") { storeys.value = "2"; }
+    else if (ptype === "extension" || ptype === "bungalow") { storeys.value = "1"; }
+  } else { storeyGroup.style.display = 'none'; storeys.value = "1"; }
+}
+function editProject(idx) {
+  currentProject = idx;
+  const p = projects[idx];
+  let storeyText = p.storeys && p.storeys > 1 ? ` (${p.storeys} Storeys)` : (p.storeys == 1 ? ' (1 Storey)' : '');
+  document.getElementById('project-title').textContent = `${p.name} – ${p.type}${storeyText}`;
+  fillUValDropdowns();
+  windowsData = [{wall:"Front",width:1.2,height:1.2, type:"Double Glazed"}];
+  renderWindows();
+  showSolarPVInput();
+  if (p.plans && (p.plans.civils || p.plans.ground || p.plans.first || p.plans.spec)) { document.getElementById('plans-note-details').style.display = ''; }
+  else { document.getElementById('plans-note-details').style.display = 'none'; }
+  showScreen('project-details-screen');
+}
+function fillUValDropdowns() {
+  ['floor','wall','roof'].forEach(type=>{
+    let sel = document.getElementById(type+'-type');
+    sel.innerHTML = '';
+    UVALS[type].forEach((opt,i)=>{
+      let o = document.createElement('option');
+      o.value = i;
+      o.textContent = opt.name;
+      sel.appendChild(o);
+    });
+  });
+  updateUValue('floor');
+  updateUValue('wall');
+  updateUValue('roof');
+}
+function updateUValue(type) {
+  let sel = document.getElementById(type+'-type');
+  let idx = sel.value;
+  let u = UVALS[type][idx].u;
+  let insul = UVALS[type][idx].insulation;
+  document.getElementById(type+'-uval').value = u.toFixed(2);
+  document.getElementById(type+'-uval-ref').textContent = "(default: "+u.toFixed(2)+")";
+  document.getElementById(type+'-insul-group').textContent = "Insulation thickness: " + insul;
+  uvalManual[type] = false;
+}
+function manualUValue(type) {
+  uvalManual[type] = true;
+  document.getElementById(type+'-uval-ref').textContent = "(manual override)";
+}
+function addWindow() {
+  if (windowsData.length > 49) return;
+  windowsData.push({wall: "Front", width: 1.2, height: 1.2, type: "Double Glazed"});
+  renderWindows();
+}
+function removeWindow(idx) { windowsData.splice(idx, 1); renderWindows(); }
+function updateWindow(idx, field, value) {
+  if(field === 'width' || field === 'height') { windowsData[idx][field] = parseFloat(value) || 0; }
+  else { windowsData[idx][field] = value; }
+  renderWindows();
+}
+function renderWindows() {
+  const list = document.getElementById('windows-list');
+  list.innerHTML = '';
+  windowsData.forEach((win, idx) => {
+    let row = document.createElement('div');
+    row.className = 'window-row';
+    let wallSel = document.createElement('select');
+    ['Front','Back','Left','Right'].forEach(loc=>{
+      let o = document.createElement('option');
+      o.value = loc; o.textContent = loc; if (win.wall === loc) o.selected = true;
+      wallSel.appendChild(o);
+    });
+    wallSel.onchange = e => { updateWindow(idx, 'wall', e.target.value); };
+    let widthInput = document.createElement('input'); widthInput.type = 'number'; widthInput.className = 'window-size-input';
+    widthInput.value = win.width || 1.2; widthInput.min = "0"; widthInput.step = "0.01"; widthInput.title = "Width (m)";
+    widthInput.oninput = e => updateWindow(idx, 'width', e.target.value);
+    let heightInput = document.createElement('input'); heightInput.type = 'number'; heightInput.className = 'window-size-input';
+    heightInput.value = win.height || 1.2; heightInput.min = "0"; heightInput.step = "0.01"; heightInput.title = "Height (m)";
+    heightInput.oninput = e => updateWindow(idx, 'height', e.target.value);
+    let typeSel = document.createElement('select');
+    WINDOW_TYPES.forEach(opt => {
+      let o = document.createElement('option');
+      o.value = opt.value; o.textContent = opt.label; if (win.type === opt.value) o.selected = true;
+      typeSel.appendChild(o);
+    });
+    typeSel.onchange = e => { updateWindow(idx, 'type', e.target.value); };
+    let delBtn = document.createElement('button'); delBtn.type = 'button'; delBtn.textContent = '–';
+    delBtn.onclick = () => removeWindow(idx);
+    row.appendChild(document.createTextNode('Wall:')); row.appendChild(wallSel);
+    row.appendChild(document.createTextNode(' W:')); row.appendChild(widthInput);
+    row.appendChild(document.createTextNode('m H:')); row.appendChild(heightInput);
+    row.appendChild(document.createTextNode('m Type:')); row.appendChild(typeSel);
+    if (windowsData.length > 1) row.appendChild(delBtn);
+    list.appendChild(row);
+  });
+}
+function getAverageWindowUValue() {
+  if (!windowsData.length) return 2.8;
+  let sumArea = 0, sumUxA = 0;
+  windowsData.forEach(w => {
+    let t = WINDOW_TYPES.find(t=>t.value===w.type) || WINDOW_TYPES[0];
+    let area = (w.width * w.height) || 0; sumUxA += t.u * area; sumArea += area;
+  });
+  return sumArea ? (sumUxA / sumArea) : 2.8;
+}
+function showSolarPVInput() {
+  var val = document.getElementById('renewables').value;
+  document.getElementById('solar-pv-group').style.display = (val === 'Solar PV') ? '' : 'none';
+}
+function estimateSAP(floorU, wallU, roofU, renew, heating, solarKwh) {
+  let base = 60;
+  base += (0.25 - floorU) * 40;
+  base += (0.25 - wallU) * 40;
+  base += (0.25 - roofU) * 40;
+  if (/solar pv/i.test(renew)) base += 7 + Math.min(solarKwh/500, 5);
+  if (/solar thermal/i.test(renew)) base += 4;
+  if (/heat pump/i.test(heating.toLowerCase())) base += 5;
+  if (/electric/i.test(heating.toLowerCase())) base -= 5;
+  if (base > 100) base = 100;
+  if (base < 30) base = 30;
+  return Math.round(base);
+}
+function epcRating(sap) {
+  if (sap >= 92) return 'A';
+  if (sap >= 81) return 'B';
+  if (sap >= 69) return 'C';
+  if (sap >= 55) return 'D';
+  if (sap >= 39) return 'E';
+  if (sap >= 21) return 'F';
+  return 'G';
+}
+function generateReport() {
+  const ceilingHeight = parseFloat(document.getElementById('ceiling-height').value) || 2.4;
+  const floorIdx = document.getElementById('floor-type').value;
+  const wallIdx = document.getElementById('wall-type').value;
+  const roofIdx = document.getElementById('roof-type').value;
+  const floorU = parseFloat(document.getElementById('floor-uval').value);
+  const wallU = parseFloat(document.getElementById('wall-uval').value);
+  const roofU = parseFloat(document.getElementById('roof-uval').value);
+  const floorArea = parseFloat(document.getElementById('floor-area').value) || 0;
+  const wallArea = parseFloat(document.getElementById('wall-area').value) || 0;
+  const roofArea = parseFloat(document.getElementById('roof-area').value) || 0;
+  const door = document.getElementById('doors').value;
+  const doorOrient = document.getElementById('door-orient').value;
+  const ren = document.getElementById('renewables').value;
+  const heat = document.getElementById('heating').value;
+  const heatingKW = parseFloat(document.getElementById('heating-kw').value) || 0;
+  let solarPVSize = 0, solarPVKwh = 0;
+  if (ren === "Solar PV") {
+    solarPVSize = parseFloat(document.getElementById('solar-pv-size').value) || 0;
+    solarPVKwh = parseFloat(document.getElementById('solar-pv-kwh').value) || 0;
+  }
+  let winList = '', totalWinArea = 0;
+  winList = windowsData.length ? windowsData.map((w,i)=>{
+    let area = (w.width * w.height) || 0;
+    totalWinArea += area;
+    let winType = WINDOW_TYPES.find(t=>t.value===w.type);
+    let uVal = winType ? winType.u : 2.8;
+    return `Window ${i+1}: Wall - ${w.wall}, Size - ${w.width}m x ${w.height}m (${area.toFixed(2)} m²), Type - ${w.type} (U=${uVal} W/m²K)`;
+  }).join("<br>") : "None";
+  const avgWinU = getAverageWindowUValue();
+  const p = projects[currentProject];
+  let storeyText = p.storeys && p.storeys > 1 ? ` (${p.storeys} Storeys)` : (p.storeys == 1 ? ' (1 Storey)' : '');
+  let fullAddress = [p.address1, p.address2, p.address3].filter(Boolean).join(', ');
+  const totalStoreys = parseInt(p.storeys || 1, 10);
+  let sap = estimateSAP(floorU, wallU, roofU, ren, heat, solarPVKwh);
+  let winPenalty = Math.round((2.8 - avgWinU) * 5);
+  sap += winPenalty;
+  if (totalStoreys >= 3) sap -= 2;
+  if (sap > 100) sap = 100;
+  if (sap < 30) sap = 30;
+  const epc = epcRating(sap);
+  const volume = (floorArea * ceilingHeight * totalStoreys) || 0;
+  const TER = 22, TFEE = 45, DER = TER - 2 + Math.round(Math.random() * 3), DFEE = TFEE - 2 + Math.round(Math.random() * 3);
+  const derPass = DER <= TER, dfeePass = DFEE <= TFEE;
+  document.getElementById('report-summary').innerHTML = `
+    <b>Project:</b> ${p.name}<br>
+    <b>Address:</b> ${fullAddress}<br>
+    <b>Post Code:</b> ${p.postcode}<br>
+    <b>Project Type:</b> ${p.type}${storeyText}<br>
+    <b>Ceiling Height:</b> ${ceilingHeight} m<br>
+    <b>Number of Storeys:</b> ${totalStoreys}<br>
+    <b>Estimated Total Volume:</b> ${volume.toFixed(2)} m³<br>
+    <hr>
+    <b>Fabric Details:</b><br>
+    Floor: ${UVALS.floor[floorIdx].name}<br>
+    &nbsp;&nbsp;Insulation: <b>${UVALS.floor[floorIdx].insulation}</b>, U-Value: <b>${floorU.toFixed(2)} W/m²K</b>, Area: <b>${floorArea} m²</b><br>
+    Wall: ${UVALS.wall[wallIdx].name}<br>
+    &nbsp;&nbsp;Insulation: <b>${UVALS.wall[wallIdx].insulation}</b>, U-Value: <b>${wallU.toFixed(2)} W/m²K</b>, Area: <b>${wallArea} m²</b><br>
+    Roof: ${UVALS.roof[roofIdx].name}<br>
+    &nbsp;&nbsp;Insulation: <b>${UVALS.roof[roofIdx].insulation}</b>, U-Value: <b>${roofU.toFixed(2)} W/m²K</b>, Area: <b>${roofArea} m²</b><br>
+    <hr>
+    <b>Front Door:</b> ${door} (${doorOrient})<br>
+    <b>Windows:</b><br>
+    ${winList}<br>
+    <b>Average Window U-Value:</b> ${avgWinU.toFixed(2)} W/m²K<br>
+    <b>Total Window Area:</b> ${totalWinArea.toFixed(2)} m²
+    <hr>
+    <b>Renewables:</b> ${ren}<br>
+    ${ren === "Solar PV" ? `<b>Solar PV System:</b> ${solarPVSize} kWp<br><b>Estimated Output:</b> ${solarPVKwh} kWh/year` : ""}
+    <b>Heating:</b> ${heat}<br>
+    <b>Heating System Output:</b> ${heatingKW ? heatingKW + " kW" : "n/a"}<br>
+    <hr>
+    <b>Estimated SAP Score:</b> <span style="font-size:1.15em;font-weight:bold;">${sap}</span><br>
+    <b>Estimated EPC Rating:</b> <span style="font-size:1.15em;font-weight:bold;color:green;">${epc}</span><br>
+    <b>Target Emission Rate (TER):</b> <span style="font-weight:bold;">${TER} kgCO₂/m²/year</span><br>
+    <b>Dwelling Emission Rate (DER):</b> <span style="font-weight:bold; color:${derPass ? 'green' : 'red'}">${DER} kgCO₂/m²/year ${derPass ? 'PASS' : 'FAIL'}</span><br>
+    <b>Target Fabric Energy Efficiency (TFEE):</b> <span style="font-weight:bold;">${TFEE} kWh/m²/year</span><br>
+    <b>Dwelling Fabric Energy Efficiency (DFEE):</b> <span style="font-weight:bold; color:${dfeePass ? 'green' : 'red'}">${DFEE} kWh/m²/year ${dfeePass ? 'PASS' : 'FAIL'}</span>
+    <br>
+    <br>
+    <b>SAP Report:</b> <span style="color:${derPass && dfeePass ? 'green' : 'red'}">${derPass && dfeePass ? 'PASS' : 'FAIL'} (Preview Only)</span><br>
+    <b>U-Value Report:</b> <span style="color:green">Compliant (Preview Only)</span>
+  `;
+  document.getElementById('materials-list-output').style.display = 'none';
+  document.getElementById('materials-list-output').innerHTML = "";
+  showScreen('reports-screen');
+}
+
+/* --- upload logic for four plan/spec files --- */
+function handleFileUpload(inputId, listId, key) {
+  document.getElementById(inputId).addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    uploadedPlans[key] = file ? file.name : null;
+    document.getElementById(listId).innerHTML = file ? `<div class='uploaded-file'><b>Uploaded:</b> ${file.name}</div>` : "";
+    updatePlansMessage();
+  });
+}
+function updatePlansMessage() {
+  let files = [];
+  if (uploadedPlans.civils) files.push("Civils");
+  if (uploadedPlans.ground) files.push("Ground Floor");
+  if (uploadedPlans.first) files.push("First Floor");
+  if (uploadedPlans.spec) files.push("Spec");
+  document.getElementById('plans-message').textContent =
+    files.length ? `Uploaded: ${files.join(', ')}. Fields will be auto-filled after project creation.` : '';
+  document.getElementById('plans-note').style.display = files.length ? '' : 'none';
+}
+handleFileUpload('plans-upload-civils', 'uploaded-files-list-civils', 'civils');
+handleFileUpload('plans-upload-ground', 'uploaded-files-list-ground', 'ground');
+handleFileUpload('plans-upload-first', 'uploaded-files-list-first', 'first');
+handleFileUpload('plans-upload-spec', 'uploaded-files-list-spec', 'spec');
+
+/* --- Materials list generator --- */
+function generateMaterialsList(inNewWindow) {
+  const floorArea = parseFloat(document.getElementById('floor-area').value) || 0;
+  const wallArea = parseFloat(document.getElementById('wall-area').value) || 0;
+  const roofArea = parseFloat(document.getElementById('roof-area').value) || 0;
+  const ceilingHeight = parseFloat(document.getElementById('ceiling-height').value) || 2.4;
+  const heatingKW = parseFloat(document.getElementById('heating-kw').value) || 0;
+  const numRooms = parseInt(document.getElementById('num-rooms').value) || 1;
+  const totalStoreys = parseInt(projects[currentProject]?.storeys || 1, 10);
+
+  let materials = [
+    { name: "Floor Insulation", qty: floorArea },
+    { name: "Concrete/floor slab (ground floor)", qty: floorArea },
+    { name: "Damp proof membrane", qty: floorArea },
+    { name: "Sand (floor slab)", qty: floorArea },
+    { name: "Cement (floor slab)", qty: floorArea },
+    { name: "Wall Insulation", qty: wallArea },
+    { name: "Bricks (outer leaf)", qty: wallArea },
+    { name: "Concrete blocks (inner leaf)", qty: wallArea },
+    { name: "Wall ties", qty: wallArea / 2 },
+    { name: "Cavity closers", qty: 10 },
+    { name: "Sand (mortar)", qty: wallArea },
+    { name: "Cement (mortar)", qty: wallArea },
+    { name: "Roof Insulation", qty: roofArea },
+    { name: "Roof covering (tiles/membrane)", qty: roofArea },
+    { name: "Gutters", qty: Math.ceil(roofArea / 10) },
+    { name: "Fascia boards", qty: Math.ceil(roofArea / 10) },
+    { name: "Soffit boards", qty: Math.ceil(roofArea / 10) },
+    { name: "Plasterboard/internal wall finish", qty: wallArea + (ceilingHeight * wallArea / 2) },
+    { name: "Ceiling board", qty: roofArea },
+    { name: "Plaster (skim)", qty: wallArea + roofArea },
+    { name: "Skirting & architrave", qty: wallArea / 8 },
+    { name: "Wall paint", qty: wallArea / 3 },
+    { name: "Ceiling paint", qty: roofArea / 2 }
+  ];
+  for (let floor = 1; floor <= totalStoreys; floor++) {
+    materials.push(
+      { name: `Stairs (floor ${floor})`, qty: (floor > 1 ? 1 : 0) },
+      { name: `1st fix plumbing (floor ${floor})`, qty: 1 },
+      { name: `2nd fix plumbing (floor ${floor})`, qty: 1 },
+      { name: `1st fix electrics (floor ${floor})`, qty: 1 },
+      { name: `2nd fix electrics (floor ${floor})`, qty: 1 },
+      { name: `Joinery (floor ${floor})`, qty: 1 },
+      { name: `Ironmongery (floor ${floor})`, qty: 1 }
+    );
+  }
+  const roomsPerFloor = Math.ceil(numRooms / totalStoreys);
+  for (let floor = 1; floor <= totalStoreys; floor++) {
+    materials.push(
+      { name: `Radiator (floor ${floor})`, qty: roomsPerFloor },
+      { name: `Socket (floor ${floor})`, qty: roomsPerFloor * 4 },
+      { name: `LED downlight (floor ${floor})`, qty: roomsPerFloor * 4 }
+    );
+  }
+  materials.push({ name: "EV charger", qty: 1 });
+  if (heatingKW > 0) {
+    materials.push({ name: "Heating system (boiler/heat pump)", qty: heatingKW });
+  }
+  function getMaterialPriceWithHeating(item, qty) {
+    if (item.startsWith("Heating system")) return 100 * qty;
+    if (item.startsWith("Stairs")) return MATERIAL_PRICES["Stairs"] * qty;
+    if (item.startsWith("1st fix plumbing")) return MATERIAL_PRICES["1st fix plumbing"] * qty;
+    if (item.startsWith("2nd fix plumbing")) return MATERIAL_PRICES["2nd fix plumbing"] * qty;
+    if (item.startsWith("Radiator")) return MATERIAL_PRICES["Radiator"] * qty;
+    if (item.startsWith("1st fix electrics")) return MATERIAL_PRICES["1st fix electrics"] * qty;
+    if (item.startsWith("2nd fix electrics")) return MATERIAL_PRICES["2nd fix electrics"] * qty;
+    if (item.startsWith("Socket")) return MATERIAL_PRICES["Socket"] * qty;
+    if (item.startsWith("LED downlight")) return MATERIAL_PRICES["LED downlight"] * qty;
+    if (item.startsWith("EV charger")) return MATERIAL_PRICES["EV charger"] * qty;
+    if (item.startsWith("Joinery")) return MATERIAL_PRICES["Joinery"] * qty;
+    if (item.startsWith("Ironmongery")) return MATERIAL_PRICES["Ironmongery"] * qty;
+    return getMaterialPrice(item, qty);
+  }
+  let html = `<h2 style="color:#003366;">Materials, Labour & Profit Breakdown</h2>
+  <h3>Materials (est.)</h3><ul>`;
+  let totalMaterials = 0;
+  materials.forEach(mat => {
+    if (!mat.qty) return;
+    let cost = getMaterialPriceWithHeating(mat.name, mat.qty);
+    totalMaterials += cost;
+    html += `<li>${mat.name}: ${mat.qty.toFixed(1)} &ndash; £${cost.toFixed(2)}</li>`;
+  });
+  windowsData.forEach((w, i) => {
+    let cost = getMaterialPrice("Window "+(i+1), 1);
+    totalMaterials += cost;
+    html += `<li>Window ${i+1} (${w.type}): 1 &ndash; £${cost.toFixed(2)}</li>`;
+  });
+  html += `</ul><b>Total Materials: £${totalMaterials.toFixed(2)}</b>`;
+  html += `<h3>Materials Table</h3><table class="materials-table">
+    <tr><th>Material</th><th>Unit Price</th><th>Qty</th><th>Cost</th></tr>`;
+  let runningMaterialsTotal = 0;
+  materials.forEach(mat => {
+    if (!mat.qty) return;
+    let unit = getMaterialPriceWithHeating(mat.name, 1);
+    let qty = mat.qty;
+    let cost = getMaterialPriceWithHeating(mat.name, qty);
+    runningMaterialsTotal += cost;
+    html += `<tr><td>${mat.name}</td><td>£${unit.toFixed(2)}</td><td>${qty.toFixed(1)}</td><td>£${cost.toFixed(2)}</td></tr>`;
+  });
+  windowsData.forEach((w, i) => {
+    let unit = getMaterialPrice("Window "+(i+1), 1);
+    let cost = unit;
+    runningMaterialsTotal += cost;
+    html += `<tr><td>Window ${i+1} (${w.type})</td><td>£${unit.toFixed(2)}</td><td>1</td><td>£${cost.toFixed(2)}</td></tr>`;
+  });
+  html += `<tr class="materials-total-row"><td colspan="3">Total Materials</td><td>£${runningMaterialsTotal.toFixed(2)}</td></tr></table>`;
+
+  let elecLabourRate = 35; // £/hr
+  let elecHoursPerFloor = 40;
+  let plumbingLabourRate = 32; // £/hr
+  let plumbingHoursPerFloor = 35;
+  let totalLabour = 0;
+  html += `<h3>Labour (est.)</h3><table class="labour-table">
+    <tr><th>Task</th><th>Rate</th><th>Qty</th><th>Cost</th></tr>`;
+  let labour = [
+    { task: "Groundworks", rate: 18, qty: floorArea / 10 },
+    { task: "Bricklaying", rate: 20, qty: wallArea / 8 },
+    { task: "Carpentry (roof)", rate: 22, qty: roofArea / 12 },
+    { task: "Window Fitting", rate: 60, qty: windowsData.length },
+    { task: "General Labour", rate: 17, qty: (floorArea + wallArea + roofArea) / 40 }
+  ];
+  for (let floor = 1; floor <= totalStoreys; floor++) {
+    labour.push(
+      { task: `Electrical 1st & 2nd fix (floor ${floor})`, rate: elecLabourRate, qty: elecHoursPerFloor },
+      { task: `Plumbing 1st & 2nd fix (floor ${floor})`, rate: plumbingLabourRate, qty: plumbingHoursPerFloor }
+    );
+  }
+  labour.forEach(l => {
+    let cost = l.rate * l.qty;
+    totalLabour += cost;
+    html += `<tr><td>${l.task}</td><td>£${l.rate}/hr</td><td>${l.qty.toFixed(1)}</td><td>£${cost.toFixed(2)}</td></tr>`;
+  });
+  html += `<tr class="labour-total-row"><td colspan="3">Total Labour</td><td>£${totalLabour.toFixed(2)}</td></tr></table>`;
+
+  let profit = (totalLabour + totalMaterials) * 0.15;
+  html += `<h3>Estimated Profit</h3>
+    <table class="total-table">
+      <tr><td>Profit (15%)</td><td>£${profit.toFixed(2)}</td></tr>
+      <tr class="profit-row"><td><b>Grand Total:</b></td><td><b>£${(totalLabour+totalMaterials+profit).toFixed(2)}</b></td></tr>
+    </table>
+    <div style="margin-top:12px;color:#005599;font-size:0.96em;">
+      <b>Note:</b> All electrical works must comply with IET Wiring Regulations (BS 7671).
+    </div>`;
+
+  if (inNewWindow) {
+    let win = window.open('', '_blank');
+    win.document.write('<html><head><title>Materials, Labour & Profit Breakdown</title>');
+    win.document.write('<style>body{font-family:Segoe UI,Arial,sans-serif;background:#f7f9fa;margin:0;padding:20px;}ul{margin:0 0 20px 20px;}h2,h3{color:#003366;}table{border-collapse:collapse;width:100%;margin-top:10px;}th,td{border-bottom:1px solid #e6e6e6;padding:5px 8px;text-align:left;}th{background:#f5fafc;}tr.labour-total-row td,tr.materials-total-row td,tr.profit-row td{font-weight:bold;}tr.profit-row td{color:#007a33;}</style>');
+    win.document.write('</head><body>' + html + '</body></html>');
+    win.document.close();
+  } else {
+    document.getElementById('materials-list-output').innerHTML = html;
+    document.getElementById('materials-list-output').style.display = '';
+  }
+}
+
+function emailMaterialsQuote() {
+  let html = document.getElementById('materials-list-output').innerHTML;
+  let div = document.createElement("div");
+  div.innerHTML = html;
+  let items = Array.from(div.getElementsByTagName("li")).map(li => li.innerText).join('\n');
+  alert("This would send the following materials list to your supplier:\n\n" + items + "\n\n(Demo only - integrate with EmailJS or backend for real emails.)");
+}
 </script>
 </body>
 </html>
