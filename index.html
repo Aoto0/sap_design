@@ -78,6 +78,12 @@ This software/code may not be copied, distributed, or used without explicit writ
         <div class="section-title">My Projects</div>
         <ul class="project-list" id="project-list"></ul>
         <button onclick="showAddProject()">+ Add New Project</button>
+        <!-- Architectural Plans Builder Button (added feature) -->
+        <div class="input-group" style="margin-top:24px;">
+          <button id="architect-builder-btn" style="width:100%;background:#005599;color:#fff;font-size:1.15em;padding:12px;border-radius:8px;border:none;cursor:pointer;">
+            Architectural Plans Builder
+          </button>
+        </div>
         <button class="top-btn" style="background:#aaa;" onclick="logout()">Log Out</button>
       </div>
 
@@ -267,6 +273,55 @@ This software/code may not be copied, distributed, or used without explicit writ
           <div id="materials-list-output" style="margin-top:12px; background:#e7f0fa; border-radius:6px; padding:10px; font-size:0.97em; display:none;"></div>
         </div>
       </div>
+
+      <!-- Architectural Plans Builder Page (NEW FEATURE) -->
+      <div id="architect-builder-screen" class="hidden">
+        <div class="section-title">Architectural Plans Builder</div>
+        <form id="architect-plans-form" autocomplete="off">
+          <div class="input-group">
+            <label for="house-width">House Width (m)</label>
+            <input type="number" id="house-width" min="2" step="0.1" required>
+          </div>
+          <div class="input-group">
+            <label for="house-length">House Length (m)</label>
+            <input type="number" id="house-length" min="2" step="0.1" required>
+          </div>
+          <div class="input-group">
+            <label for="house-height">House Height (m)</label>
+            <input type="number" id="house-height" min="2" step="0.1" required>
+          </div>
+          <div class="input-group">
+            <label for="downstairs-rooms">Select Downstairs Rooms</label>
+            <select id="downstairs-rooms" multiple>
+              <option value="Kitchen">Kitchen</option>
+              <option value="Living Room">Living Room</option>
+              <option value="Hallway">Hallway</option>
+              <option value="Bathroom">Bathroom</option>
+              <option value="Utility">Utility</option>
+              <option value="Dining Room">Dining Room</option>
+              <option value="Office">Office</option>
+            </select>
+            <small>Select one or more rooms (CTRL+Click for multi-select)</small>
+          </div>
+          <div class="input-group">
+            <label for="upstairs-rooms">Select Upstairs Rooms</label>
+            <select id="upstairs-rooms" multiple>
+              <option value="Bedroom">Bedroom</option>
+              <option value="Bathroom">Bathroom</option>
+              <option value="Ensuite">Ensuite</option>
+              <option value="Landing">Landing</option>
+              <option value="Storage">Storage</option>
+            </select>
+            <small>Select one or more rooms (CTRL+Click for multi-select)</small>
+          </div>
+          <button type="submit" style="background:#007a33;">Build Plans</button>
+          <button type="button" onclick="showScreen('projects-screen')" style="background:#003366;">Back</button>
+        </form>
+        <div id="architect-plans-output" style="margin-top:24px;"></div>
+        <div id="architect-2d-plan" style="margin-top:24px;"></div>
+      </div>
+      <!-- END NEW FEATURE -->
+
     </div>
   </div>
 <script>
@@ -809,6 +864,115 @@ function emailMaterialsQuote() {
   let items = Array.from(div.getElementsByTagName("li")).map(li => li.innerText).join('\n');
   alert("This would send the following materials list to your supplier:\n\n" + items + "\n\n(Demo only - integrate with EmailJS or backend for real emails.)");
 }
+
+// Architectural Plans Builder Logic
+document.getElementById('architect-builder-btn').onclick = function() {
+  showScreen('architect-builder-screen');
+};
+
+const ROOM_MIN_SIZES = {
+  "Kitchen": 11, "Living Room": 15, "Hallway": 6, "Bathroom": 4.5, "Utility": 4, "Dining Room": 10, "Office": 7,
+  "Bedroom": 9, "Ensuite": 3, "Landing": 5, "Storage": 3
+};
+
+function calcWindowSize(roomArea) {
+  return Math.max(1.5, Math.round(roomArea / 20 * 10) / 10);
+}
+
+function calcDoorSize(type) {
+  return type === "Front Door" ? 2 : 1.6;
+}
+
+document.getElementById('architect-plans-form').onsubmit = function(e) {
+  e.preventDefault();
+
+  const w = parseFloat(document.getElementById('house-width').value);
+  const l = parseFloat(document.getElementById('house-length').value);
+  const h = parseFloat(document.getElementById('house-height').value);
+
+  const downRooms = Array.from(document.getElementById('downstairs-rooms').selectedOptions).map(o=>o.value);
+  const upRooms = Array.from(document.getElementById('upstairs-rooms').selectedOptions).map(o=>o.value);
+
+  const houseArea = w * l;
+  const allRooms = downRooms.concat(upRooms);
+  let totalMinRoomArea = allRooms.reduce((sum, r) => sum + (ROOM_MIN_SIZES[r]||8), 0);
+  let scaleFactor = houseArea / totalMinRoomArea;
+
+  let roomDetails = [];
+  allRooms.forEach((room, i) => {
+    let minSize = ROOM_MIN_SIZES[room] || 8;
+    let size = Math.round(minSize * scaleFactor * 10) / 10;
+    roomDetails.push({
+      name: room,
+      area: size,
+      window: calcWindowSize(size),
+      door: calcDoorSize(room === "Hallway" || room === "Landing" ? "Internal" : "Front Door"),
+      floor: i < downRooms.length ? 0 : 1,
+      idx: i
+    });
+  });
+
+  let wallArea = 2 * (w + l) * h;
+  let floorArea = houseArea;
+  let roofArea = houseArea;
+  let ceilingArea = houseArea;
+  let windowArea = roomDetails.reduce((sum, r) => sum + r.window, 0);
+  let doorArea = roomDetails.reduce((sum, r) => sum + r.door, 0);
+
+  let materials = [
+    { name: "Floor Insulation", qty: floorArea },
+    { name: "Concrete/floor slab (ground floor)", qty: floorArea },
+    { name: "Wall Insulation", qty: wallArea },
+    { name: "Bricks (outer leaf)", qty: wallArea },
+    { name: "Concrete blocks (inner leaf)", qty: wallArea },
+    { name: "Roof Insulation", qty: roofArea },
+    { name: "Roof tiles", qty: roofArea },
+    { name: "Plasterboard/internal wall finish", qty: wallArea + ceilingArea },
+    { name: "Ceiling board", qty: ceilingArea },
+    { name: "Wall paint", qty: wallArea },
+    { name: "Ceiling paint", qty: ceilingArea },
+    { name: "Windows", qty: windowArea },
+    { name: "Doors", qty: doorArea }
+  ];
+
+  let output = `<h3>Materials List</h3><ul>`;
+  materials.forEach(m=>{
+    output += `<li>${m.name}: <b>${Math.round(m.qty*10)/10} m²</b></li>`;
+  });
+  output += `</ul>`;
+
+  output += `<h3>Room Breakdown</h3><ul>`;
+  roomDetails.forEach(r=>{
+    output += `<li>${r.name} (${r.area} m², Window: ${r.window} m², Door: ${r.door} m², ${r.floor===0?'Downstairs':'Upstairs'})</li>`;
+  });
+  output += `</ul>`;
+
+  document.getElementById('architect-plans-output').innerHTML = output;
+
+  let svgW = 400, svgH = 250, margin = 20;
+  let roomW = Math.max(1, Math.floor((svgW-margin*2)/Math.ceil(Math.sqrt(roomDetails.length))));
+  let roomH = Math.max(1, Math.floor((svgH-margin*2)/Math.ceil(Math.sqrt(roomDetails.length))));
+  let svg = `<svg width="${svgW}" height="${svgH}" style="background:#f7f9fa;border:1px solid #bbb;border-radius:8px">`;
+
+  let cols = Math.ceil(Math.sqrt(roomDetails.length));
+  let rows = Math.ceil(roomDetails.length / cols);
+  let idx = 0;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (idx >= roomDetails.length) continue;
+      let room = roomDetails[idx];
+      let x = margin + c*roomW;
+      let y = margin + r*roomH;
+      svg += `<rect x="${x}" y="${y}" width="${roomW-8}" height="${roomH-8}" fill="#e7f0fa" stroke="#005599" stroke-width="2"/>`;
+      svg += `<text x="${x+8}" y="${y+20}" font-size="14" fill="#003366">${room.name}</text>`;
+      svg += `<rect x="${x+roomW-24}" y="${y+6}" width="16" height="8" fill="#6fc1ff" stroke="#005599" stroke-width="1"/>`;
+      svg += `<rect x="${x+((roomW-8)/2)-8}" y="${y+roomH-14}" width="16" height="8" fill="#c0976b" stroke="#8b5a2b" stroke-width="1"/>`;
+      idx++;
+    }
+  }
+  svg += `</svg>`;
+  document.getElementById('architect-2d-plan').innerHTML = `<h3>2D Floor Plan (Preview)</h3>` + svg;
+};
 </script>
 </body>
 </html>
