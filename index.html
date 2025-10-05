@@ -79,11 +79,11 @@ This software/code may not be copied, distributed, or used without explicit writ
         <ul class="project-list" id="project-list"></ul>
         <button onclick="showAddProject()">+ Add New Project</button>
         <!-- Architectural Plans Builder Button (added feature) -->
-        <div class="input-group" style="margin-top:24px;">
-          <button id="architect-builder-btn" style="width:100%;background:#005599;color:#fff;font-size:1.15em;padding:12px;border-radius:8px;border:none;cursor:pointer;">
-            Architectural Plans Builder
-          </button>
-        </div>
+<div class="input-group" style="margin-top:24px;">
+  <button id="architect-builder-btn" style="width:100%;background:#005599;color:#fff;font-size:1.15em;padding:12px;border-radius:8px;border:none;cursor:pointer;">
+    Architectural Plans Builder
+  </button>
+</div>
         <button class="top-btn" style="background:#aaa;" onclick="logout()">Log Out</button>
       </div>
 
@@ -275,52 +275,53 @@ This software/code may not be copied, distributed, or used without explicit writ
       </div>
 
       <!-- Architectural Plans Builder Page (NEW FEATURE) -->
-      <div id="architect-builder-screen" class="hidden">
-        <div class="section-title">Architectural Plans Builder</div>
-        <form id="architect-plans-form" autocomplete="off">
-          <div class="input-group">
-            <label for="house-width">House Width (m)</label>
-            <input type="number" id="house-width" min="2" step="0.1" required>
-          </div>
-          <div class="input-group">
-            <label for="house-length">House Length (m)</label>
-            <input type="number" id="house-length" min="2" step="0.1" required>
-          </div>
-          <div class="input-group">
-            <label for="house-height">House Height (m)</label>
-            <input type="number" id="house-height" min="2" step="0.1" required>
-          </div>
-          <div class="input-group">
-            <label for="downstairs-rooms">Select Downstairs Rooms</label>
-            <select id="downstairs-rooms" multiple>
-              <option value="Kitchen">Kitchen</option>
-              <option value="Living Room">Living Room</option>
-              <option value="Hallway">Hallway</option>
-              <option value="Bathroom">Bathroom</option>
-              <option value="Utility">Utility</option>
-              <option value="Dining Room">Dining Room</option>
-              <option value="Office">Office</option>
-            </select>
-            <small>Select one or more rooms (CTRL+Click for multi-select)</small>
-          </div>
-          <div class="input-group">
-            <label for="upstairs-rooms">Select Upstairs Rooms</label>
-            <select id="upstairs-rooms" multiple>
-              <option value="Bedroom">Bedroom</option>
-              <option value="Bathroom">Bathroom</option>
-              <option value="Ensuite">Ensuite</option>
-              <option value="Landing">Landing</option>
-              <option value="Storage">Storage</option>
-            </select>
-            <small>Select one or more rooms (CTRL+Click for multi-select)</small>
-          </div>
-          <button type="submit" style="background:#007a33;">Build Plans</button>
-          <button type="button" onclick="showScreen('projects-screen')" style="background:#003366;">Back</button>
-        </form>
-        <div id="architect-plans-output" style="margin-top:24px;"></div>
-        <div id="architect-2d-plan" style="margin-top:24px;"></div>
-      </div>
-      <!-- END NEW FEATURE -->
+<div id="architect-builder-screen" class="hidden">
+  <div class="section-title">Architectural Plans Builder</div>
+  <form id="architect-plans-form" autocomplete="off">
+    <div class="input-group">
+      <label for="house-width">House Width (m)</label>
+      <input type="number" id="house-width" min="2" step="0.1" required>
+    </div>
+    <div class="input-group">
+      <label for="house-length">House Length (m)</label>
+      <input type="number" id="house-length" min="2" step="0.1" required>
+    </div>
+    <div class="input-group">
+      <label for="house-height">House Height (m)</label>
+      <input type="number" id="house-height" min="2" step="0.1" required>
+    </div>
+    <div class="input-group">
+      <label for="downstairs-rooms">Select Downstairs Rooms (Ground Floor)</label>
+      <select id="downstairs-rooms" multiple>
+        <option value="Kitchen">Kitchen</option>
+        <option value="Living Room">Living Room</option>
+        <option value="Hallway">Hallway</option>
+        <option value="Bathroom">Bathroom</option>
+        <option value="Utility">Utility</option>
+        <option value="Dining Room">Dining Room</option>
+        <option value="Office">Office</option>
+      </select>
+      <small>Select one or more rooms (CTRL+Click for multi-select)</small>
+    </div>
+    <div class="input-group">
+      <label for="upstairs-rooms">Select Upstairs Rooms (First Floor)</label>
+      <select id="upstairs-rooms" multiple>
+        <option value="Bedroom">Bedroom</option>
+        <option value="Bathroom">Bathroom</option>
+        <option value="Ensuite">Ensuite</option>
+        <option value="Landing">Landing</option>
+        <option value="Storage">Storage</option>
+      </select>
+      <small>Select one or more rooms (CTRL+Click for multi-select)</small>
+    </div>
+    <button type="submit" style="background:#007a33;">Build Plans</button>
+    <button type="button" onclick="showScreen('projects-screen')" style="background:#003366;">Back</button>
+  </form>
+  <div id="architect-plans-output" style="margin-top:24px;"></div>
+  <div id="architect-2d-plan" style="margin-top:24px;"></div>
+  <button id="download-pdf-btn" type="button" style="background:#007a33;margin-top:20px;display:none;">Download Floor Plan as PDF</button>
+</div>
+<!-- END NEW FEATURE -->
 
     </div>
   </div>
@@ -865,69 +866,171 @@ function emailMaterialsQuote() {
   alert("This would send the following materials list to your supplier:\n\n" + items + "\n\n(Demo only - integrate with EmailJS or backend for real emails.)");
 }
 
-// --- Start Enhanced SVG Code for Architectural Plans ---
+// Architectural Plans Builder Logic
+document.getElementById('architect-builder-btn').onclick = function() {
+  showScreen('architect-builder-screen');
+};
 
-let scale = 25; // 1 meter = 25 pixels
-let wallBrick = 0.1 * scale; // 100mm brickwork
-let wallCavity = 0.15 * scale; // 150mm cavity
-let wallBlock = 0.1 * scale; // 100mm blockwork
-let wallTotal = wallBrick + wallCavity + wallBlock;
+const ROOM_MIN_SIZES = {
+  "Kitchen": 11, "Living Room": 15, "Hallway": 6, "Bathroom": 4.5, "Utility": 4, "Dining Room": 10, "Office": 7,
+  "Bedroom": 9, "Ensuite": 3, "Landing": 5, "Storage": 3
+};
 
-let houseW = w * scale;
-let houseL = l * scale;
-let margin = 30;
-
-let svgW = houseW + margin * 2;
-let svgH = houseL + margin * 2;
-
-let svg = `<svg width="${svgW}" height="${svgH}" style="background:#f7f9fa;border:1px solid #bbb;border-radius:8px">`;
-
-// Draw exterior walls: brick, cavity, block
-svg += `
-  <!-- Outer brickwork -->
-  <rect x="${margin}" y="${margin}" width="${houseW}" height="${houseL}" fill="none" stroke="#b22222" stroke-width="${wallBrick}" />
-  <!-- Cavity -->
-  <rect x="${margin + wallBrick}" y="${margin + wallBrick}" width="${houseW - 2 * wallBrick}" height="${houseL - 2 * wallBrick}" fill="none" stroke="#e0e0e0" stroke-width="${wallCavity}" />
-  <!-- Blockwork -->
-  <rect x="${margin + wallBrick + wallCavity}" y="${margin + wallBrick + wallCavity}" width="${houseW - 2 * (wallBrick + wallCavity)}" height="${houseL - 2 * (wallBrick + wallCavity)}" fill="none" stroke="#808080" stroke-width="${wallBlock}" />
-`;
-
-// Place rooms (grid layout, for demo)
-let cols = Math.ceil(Math.sqrt(roomDetails.length));
-let rows = Math.ceil(roomDetails.length / cols);
-
-let roomW = (houseW - wallTotal * 2) / cols;
-let roomH = (houseL - wallTotal * 2) / rows;
-
-let ridx = 0;
-for (let r = 0; r < rows; r++) {
-  for (let c = 0; c < cols; c++) {
-    if (ridx >= roomDetails.length) continue;
-    let room = roomDetails[ridx];
-    let rx = margin + wallTotal + c * roomW;
-    let ry = margin + wallTotal + r * roomH;
-    svg += `<rect x="${rx}" y="${ry}" width="${roomW-8}" height="${roomH-8}" fill="#e7f0fa" stroke="#005599" stroke-width="2"/>`;
-    // Room name
-    svg += `<text x="${rx+10}" y="${ry+22}" font-size="14" fill="#003366">${room.name}</text>`;
-    // Room width label
-    svg += `<text x="${rx + (roomW-8)/2 - 20}" y="${ry + 16}" font-size="12" fill="#007a33">${((roomW-8)/scale).toFixed(1)}m</text>`;
-    // Room length label (rotated)
-    svg += `<text x="${rx + roomW - 24}" y="${ry + (roomH-8)/2}" font-size="12" fill="#007a33" transform="rotate(90,${rx + roomW - 24},${ry + (roomH-8)/2})">${((roomH-8)/scale).toFixed(1)}m</text>`;
-    ridx++;
-  }
+function calcWindowSize(roomArea) {
+  return Math.max(1.5, Math.round(roomArea / 20 * 10) / 10);
+}
+function calcDoorSize(type) {
+  return type === "Front Door" ? 2 : 1.6;
 }
 
-// Legend for walls
-svg += `
-  <rect x="${svgW-180}" y="${svgH-60}" width="17" height="17" fill="none" stroke="#b22222" stroke-width="${wallBrick}" />
-  <text x="${svgW-155}" y="${svgH-47}" font-size="12" fill="#b22222">100mm Brickwork</text>
-  <rect x="${svgW-180}" y="${svgH-40}" width="17" height="17" fill="none" stroke="#e0e0e0" stroke-width="${wallCavity}" />
-  <text x="${svgW-155}" y="${svgH-27}" font-size="12" fill="#888">150mm Cavity/Insulation</text>
-  <rect x="${svgW-180}" y="${svgH-20}" width="17" height="17" fill="none" stroke="#808080" stroke-width="${wallBlock}" />
-  <text x="${svgW-155}" y="${svgH-7}" font-size="12" fill="#808080">100mm Blockwork</text>
-`;
+document.getElementById('architect-plans-form').onsubmit = function(e) {
+  e.preventDefault();
 
-svg += `</svg>`;
-document.getElementById('architect-2d-plan').innerHTML = `<h3>2D Floor Plan (Preview)</h3>` + svg;
+  const w = parseFloat(document.getElementById('house-width').value);
+  const l = parseFloat(document.getElementById('house-length').value);
+  const h = parseFloat(document.getElementById('house-height').value);
 
-// --- End Enhanced SVG Code ---
+  const downRooms = Array.from(document.getElementById('downstairs-rooms').selectedOptions).map(o=>o.value);
+  const upRooms = Array.from(document.getElementById('upstairs-rooms').selectedOptions).map(o=>o.value);
+
+  const houseArea = w * l;
+  const allRooms = downRooms.concat(upRooms);
+  let totalMinRoomArea = allRooms.reduce((sum, r) => sum + (ROOM_MIN_SIZES[r]||8), 0);
+  let scaleFactor = houseArea / totalMinRoomArea;
+
+  let groundRooms = [];
+  let firstRooms = [];
+  downRooms.forEach((room, i) => {
+    let minSize = ROOM_MIN_SIZES[room] || 8;
+    let size = Math.round(minSize * scaleFactor * 10) / 10;
+    groundRooms.push({
+      name: room,
+      area: size,
+      window: calcWindowSize(size),
+      door: calcDoorSize(room === "Hallway" ? "Internal" : "Front Door"),
+      idx: i
+    });
+  });
+  upRooms.forEach((room, i) => {
+    let minSize = ROOM_MIN_SIZES[room] || 8;
+    let size = Math.round(minSize * scaleFactor * 10) / 10;
+    firstRooms.push({
+      name: room,
+      area: size,
+      window: calcWindowSize(size),
+      door: calcDoorSize(room === "Landing" ? "Internal" : "Front Door"),
+      idx: i
+    });
+  });
+
+  // Output Materials and Room Breakdown
+  let output = `<h3>Materials List</h3><ul>`;
+  let materials = [
+    ...groundRooms.map(r => ({ name: `${r.name} (Ground)`, qty: r.area })),
+    ...firstRooms.map(r => ({ name: `${r.name} (First)`, qty: r.area }))
+  ];
+  materials.forEach(m=>{
+    output += `<li>${m.name}: <b>${Math.round(m.qty*10)/10} m²</b></li>`;
+  });
+  output += `</ul><h3>Room Breakdown</h3><ul>`;
+  groundRooms.forEach(r=>{
+    output += `<li>Ground Floor: ${r.name} (${r.area} m², Window: ${r.window} m², Door: ${r.door} m²)</li>`;
+  });
+  firstRooms.forEach(r=>{
+    output += `<li>First Floor: ${r.name} (${r.area} m², Window: ${r.window} m², Door: ${r.door} m²)</li>`;
+  });
+  output += `</ul>`;
+  document.getElementById('architect-plans-output').innerHTML = output;
+
+  // -- SVG Drawing for Ground and First Floor --
+  let scale = 25; // 1m = 25px
+  let wallBrick = 0.1 * scale;
+  let wallCavity = 0.15 * scale;
+  let wallBlock = 0.1 * scale;
+  let wallTotal = wallBrick + wallCavity + wallBlock;
+  let houseW = w * scale;
+  let houseL = l * scale;
+  let margin = 30;
+  let floorGap = 100; // Space between floors in SVG
+
+  let svgW = houseW + margin * 2;
+  let svgH = houseL * 2 + margin * 3 + floorGap;
+
+  let svg = `<svg width="${svgW}" height="${svgH}" style="background:#f7f9fa;border:1px solid #bbb;border-radius:8px">`;
+
+  // --- Ground Floor ---
+  let groundY = margin;
+  svg += `<text x="${svgW/2-60}" y="${groundY-10}" font-size="18" fill="#003366">Ground Floor</text>`;
+  svg += `<rect x="${margin}" y="${groundY}" width="${houseW}" height="${houseL}" fill="none" stroke="#b22222" stroke-width="${wallBrick}" />`;
+  svg += `<rect x="${margin+wallBrick}" y="${groundY+wallBrick}" width="${houseW-2*wallBrick}" height="${houseL-2*wallBrick}" fill="none" stroke="#e0e0e0" stroke-width="${wallCavity}" />`;
+  svg += `<rect x="${margin+wallBrick+wallCavity}" y="${groundY+wallBrick+wallCavity}" width="${houseW-2*(wallBrick+wallCavity)}" height="${houseL-2*(wallBrick+wallCavity)}" fill="none" stroke="#808080" stroke-width="${wallBlock}" />`;
+
+  // Room grid
+  let groundCols = Math.max(1, Math.ceil(Math.sqrt(groundRooms.length)));
+  let groundRows = Math.max(1, Math.ceil(groundRooms.length / groundCols));
+  let groundRoomW = (houseW-2*wallTotal) / groundCols;
+  let groundRoomH = (houseL-2*wallTotal) / groundRows;
+  let groundIdx = 0;
+  for (let r = 0; r < groundRows; r++) {
+    for (let c = 0; c < groundCols; c++) {
+      if (groundIdx >= groundRooms.length) continue;
+      let room = groundRooms[groundIdx];
+      let rx = margin + wallTotal + c * groundRoomW;
+      let ry = groundY + wallTotal + r * groundRoomH;
+      svg += `<rect x="${rx}" y="${ry}" width="${groundRoomW-8}" height="${groundRoomH-8}" fill="#e7f0fa" stroke="#005599" stroke-width="2"/>`;
+      svg += `<text x="${rx+10}" y="${ry+22}" font-size="14" fill="#003366">${room.name}</text>`;
+      svg += `<text x="${rx + (groundRoomW-8)/2 - 20}" y="${ry + 16}" font-size="12" fill="#007a33">${((groundRoomW-8)/scale).toFixed(1)}m</text>`;
+      svg += `<text x="${rx + groundRoomW - 24}" y="${ry + (groundRoomH-8)/2}" font-size="12" fill="#007a33" transform="rotate(90,${rx + groundRoomW - 24},${ry + (groundRoomH-8)/2})">${((groundRoomH-8)/scale).toFixed(1)}m</text>`;
+      groundIdx++;
+    }
+  }
+
+  // --- First Floor ---
+  let firstY = groundY + houseL + floorGap;
+  svg += `<text x="${svgW/2-60}" y="${firstY-10}" font-size="18" fill="#003366">First Floor</text>`;
+  svg += `<rect x="${margin}" y="${firstY}" width="${houseW}" height="${houseL}" fill="none" stroke="#b22222" stroke-width="${wallBrick}" />`;
+  svg += `<rect x="${margin+wallBrick}" y="${firstY+wallBrick}" width="${houseW-2*wallBrick}" height="${houseL-2*wallBrick}" fill="none" stroke="#e0e0e0" stroke-width="${wallCavity}" />`;
+  svg += `<rect x="${margin+wallBrick+wallCavity}" y="${firstY+wallBrick+wallCavity}" width="${houseW-2*(wallBrick+wallCavity)}" height="${houseL-2*(wallBrick+wallCavity)}" fill="none" stroke="#808080" stroke-width="${wallBlock}" />`;
+
+  let firstCols = Math.max(1, Math.ceil(Math.sqrt(firstRooms.length)));
+  let firstRows = Math.max(1, Math.ceil(firstRooms.length / firstCols));
+  let firstRoomW = (houseW-2*wallTotal) / firstCols;
+  let firstRoomH = (houseL-2*wallTotal) / firstRows;
+  let firstIdx = 0;
+  for (let r = 0; r < firstRows; r++) {
+    for (let c = 0; c < firstCols; c++) {
+      if (firstIdx >= firstRooms.length) continue;
+      let room = firstRooms[firstIdx];
+      let rx = margin + wallTotal + c * firstRoomW;
+      let ry = firstY + wallTotal + r * firstRoomH;
+      svg += `<rect x="${rx}" y="${ry}" width="${firstRoomW-8}" height="${firstRoomH-8}" fill="#e7f0fa" stroke="#005599" stroke-width="2"/>`;
+      svg += `<text x="${rx+10}" y="${ry+22}" font-size="14" fill="#003366">${room.name}</text>`;
+      svg += `<text x="${rx + (firstRoomW-8)/2 - 20}" y="${ry + 16}" font-size="12" fill="#007a33">${((firstRoomW-8)/scale).toFixed(1)}m</text>`;
+      svg += `<text x="${rx + firstRoomW - 24}" y="${ry + (firstRoomH-8)/2}" font-size="12" fill="#007a33" transform="rotate(90,${rx + firstRoomW - 24},${ry + (firstRoomH-8)/2})">${((firstRoomH-8)/scale).toFixed(1)}m</text>`;
+      firstIdx++;
+    }
+  }
+
+  // Legend for wall build-up
+  svg += `
+    <rect x="${svgW-180}" y="${svgH-60}" width="17" height="17" fill="none" stroke="#b22222" stroke-width="${wallBrick}" />
+    <text x="${svgW-155}" y="${svgH-47}" font-size="12" fill="#b22222">100mm Brickwork</text>
+    <rect x="${svgW-180}" y="${svgH-40}" width="17" height="17" fill="none" stroke="#e0e0e0" stroke-width="${wallCavity}" />
+    <text x="${svgW-155}" y="${svgH-27}" font-size="12" fill="#888">150mm Cavity/Insulation</text>
+    <rect x="${svgW-180}" y="${svgH-20}" width="17" height="17" fill="none" stroke="#808080" stroke-width="${wallBlock}" />
+    <text x="${svgW-155}" y="${svgH-7}" font-size="12" fill="#808080">100mm Blockwork</text>
+  `;
+  svg += `</svg>`;
+
+  document.getElementById('architect-2d-plan').innerHTML = `<h3>2D Floor Plan (Preview)</h3>` + svg;
+  document.getElementById('download-pdf-btn').style.display = ''; // Show the PDF button
+};
+
+// --- PDF download logic ---
+document.getElementById('download-pdf-btn').onclick = function() {
+  const { jsPDF } = window.jspdf;
+  let doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+  let svgElement = document.querySelector('#architect-2d-plan svg');
+  svg2pdf(svgElement, doc, { xOffset: 20, yOffset: 20, scale: 1 });
+  doc.save('floor-plan.pdf');
+};
