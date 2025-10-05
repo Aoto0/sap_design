@@ -865,114 +865,69 @@ function emailMaterialsQuote() {
   alert("This would send the following materials list to your supplier:\n\n" + items + "\n\n(Demo only - integrate with EmailJS or backend for real emails.)");
 }
 
-// Architectural Plans Builder Logic
-document.getElementById('architect-builder-btn').onclick = function() {
-  showScreen('architect-builder-screen');
-};
+// --- Start Enhanced SVG Code for Architectural Plans ---
 
-const ROOM_MIN_SIZES = {
-  "Kitchen": 11, "Living Room": 15, "Hallway": 6, "Bathroom": 4.5, "Utility": 4, "Dining Room": 10, "Office": 7,
-  "Bedroom": 9, "Ensuite": 3, "Landing": 5, "Storage": 3
-};
+let scale = 25; // 1 meter = 25 pixels
+let wallBrick = 0.1 * scale; // 100mm brickwork
+let wallCavity = 0.15 * scale; // 150mm cavity
+let wallBlock = 0.1 * scale; // 100mm blockwork
+let wallTotal = wallBrick + wallCavity + wallBlock;
 
-function calcWindowSize(roomArea) {
-  return Math.max(1.5, Math.round(roomArea / 20 * 10) / 10);
-}
+let houseW = w * scale;
+let houseL = l * scale;
+let margin = 30;
 
-function calcDoorSize(type) {
-  return type === "Front Door" ? 2 : 1.6;
-}
+let svgW = houseW + margin * 2;
+let svgH = houseL + margin * 2;
 
-document.getElementById('architect-plans-form').onsubmit = function(e) {
-  e.preventDefault();
+let svg = `<svg width="${svgW}" height="${svgH}" style="background:#f7f9fa;border:1px solid #bbb;border-radius:8px">`;
 
-  const w = parseFloat(document.getElementById('house-width').value);
-  const l = parseFloat(document.getElementById('house-length').value);
-  const h = parseFloat(document.getElementById('house-height').value);
+// Draw exterior walls: brick, cavity, block
+svg += `
+  <!-- Outer brickwork -->
+  <rect x="${margin}" y="${margin}" width="${houseW}" height="${houseL}" fill="none" stroke="#b22222" stroke-width="${wallBrick}" />
+  <!-- Cavity -->
+  <rect x="${margin + wallBrick}" y="${margin + wallBrick}" width="${houseW - 2 * wallBrick}" height="${houseL - 2 * wallBrick}" fill="none" stroke="#e0e0e0" stroke-width="${wallCavity}" />
+  <!-- Blockwork -->
+  <rect x="${margin + wallBrick + wallCavity}" y="${margin + wallBrick + wallCavity}" width="${houseW - 2 * (wallBrick + wallCavity)}" height="${houseL - 2 * (wallBrick + wallCavity)}" fill="none" stroke="#808080" stroke-width="${wallBlock}" />
+`;
 
-  const downRooms = Array.from(document.getElementById('downstairs-rooms').selectedOptions).map(o=>o.value);
-  const upRooms = Array.from(document.getElementById('upstairs-rooms').selectedOptions).map(o=>o.value);
+// Place rooms (grid layout, for demo)
+let cols = Math.ceil(Math.sqrt(roomDetails.length));
+let rows = Math.ceil(roomDetails.length / cols);
 
-  const houseArea = w * l;
-  const allRooms = downRooms.concat(upRooms);
-  let totalMinRoomArea = allRooms.reduce((sum, r) => sum + (ROOM_MIN_SIZES[r]||8), 0);
-  let scaleFactor = houseArea / totalMinRoomArea;
+let roomW = (houseW - wallTotal * 2) / cols;
+let roomH = (houseL - wallTotal * 2) / rows;
 
-  let roomDetails = [];
-  allRooms.forEach((room, i) => {
-    let minSize = ROOM_MIN_SIZES[room] || 8;
-    let size = Math.round(minSize * scaleFactor * 10) / 10;
-    roomDetails.push({
-      name: room,
-      area: size,
-      window: calcWindowSize(size),
-      door: calcDoorSize(room === "Hallway" || room === "Landing" ? "Internal" : "Front Door"),
-      floor: i < downRooms.length ? 0 : 1,
-      idx: i
-    });
-  });
-
-  let wallArea = 2 * (w + l) * h;
-  let floorArea = houseArea;
-  let roofArea = houseArea;
-  let ceilingArea = houseArea;
-  let windowArea = roomDetails.reduce((sum, r) => sum + r.window, 0);
-  let doorArea = roomDetails.reduce((sum, r) => sum + r.door, 0);
-
-  let materials = [
-    { name: "Floor Insulation", qty: floorArea },
-    { name: "Concrete/floor slab (ground floor)", qty: floorArea },
-    { name: "Wall Insulation", qty: wallArea },
-    { name: "Bricks (outer leaf)", qty: wallArea },
-    { name: "Concrete blocks (inner leaf)", qty: wallArea },
-    { name: "Roof Insulation", qty: roofArea },
-    { name: "Roof tiles", qty: roofArea },
-    { name: "Plasterboard/internal wall finish", qty: wallArea + ceilingArea },
-    { name: "Ceiling board", qty: ceilingArea },
-    { name: "Wall paint", qty: wallArea },
-    { name: "Ceiling paint", qty: ceilingArea },
-    { name: "Windows", qty: windowArea },
-    { name: "Doors", qty: doorArea }
-  ];
-
-  let output = `<h3>Materials List</h3><ul>`;
-  materials.forEach(m=>{
-    output += `<li>${m.name}: <b>${Math.round(m.qty*10)/10} m²</b></li>`;
-  });
-  output += `</ul>`;
-
-  output += `<h3>Room Breakdown</h3><ul>`;
-  roomDetails.forEach(r=>{
-    output += `<li>${r.name} (${r.area} m², Window: ${r.window} m², Door: ${r.door} m², ${r.floor===0?'Downstairs':'Upstairs'})</li>`;
-  });
-  output += `</ul>`;
-
-  document.getElementById('architect-plans-output').innerHTML = output;
-
-  let svgW = 400, svgH = 250, margin = 20;
-  let roomW = Math.max(1, Math.floor((svgW-margin*2)/Math.ceil(Math.sqrt(roomDetails.length))));
-  let roomH = Math.max(1, Math.floor((svgH-margin*2)/Math.ceil(Math.sqrt(roomDetails.length))));
-  let svg = `<svg width="${svgW}" height="${svgH}" style="background:#f7f9fa;border:1px solid #bbb;border-radius:8px">`;
-
-  let cols = Math.ceil(Math.sqrt(roomDetails.length));
-  let rows = Math.ceil(roomDetails.length / cols);
-  let idx = 0;
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      if (idx >= roomDetails.length) continue;
-      let room = roomDetails[idx];
-      let x = margin + c*roomW;
-      let y = margin + r*roomH;
-      svg += `<rect x="${x}" y="${y}" width="${roomW-8}" height="${roomH-8}" fill="#e7f0fa" stroke="#005599" stroke-width="2"/>`;
-      svg += `<text x="${x+8}" y="${y+20}" font-size="14" fill="#003366">${room.name}</text>`;
-      svg += `<rect x="${x+roomW-24}" y="${y+6}" width="16" height="8" fill="#6fc1ff" stroke="#005599" stroke-width="1"/>`;
-      svg += `<rect x="${x+((roomW-8)/2)-8}" y="${y+roomH-14}" width="16" height="8" fill="#c0976b" stroke="#8b5a2b" stroke-width="1"/>`;
-      idx++;
-    }
+let ridx = 0;
+for (let r = 0; r < rows; r++) {
+  for (let c = 0; c < cols; c++) {
+    if (ridx >= roomDetails.length) continue;
+    let room = roomDetails[ridx];
+    let rx = margin + wallTotal + c * roomW;
+    let ry = margin + wallTotal + r * roomH;
+    svg += `<rect x="${rx}" y="${ry}" width="${roomW-8}" height="${roomH-8}" fill="#e7f0fa" stroke="#005599" stroke-width="2"/>`;
+    // Room name
+    svg += `<text x="${rx+10}" y="${ry+22}" font-size="14" fill="#003366">${room.name}</text>`;
+    // Room width label
+    svg += `<text x="${rx + (roomW-8)/2 - 20}" y="${ry + 16}" font-size="12" fill="#007a33">${((roomW-8)/scale).toFixed(1)}m</text>`;
+    // Room length label (rotated)
+    svg += `<text x="${rx + roomW - 24}" y="${ry + (roomH-8)/2}" font-size="12" fill="#007a33" transform="rotate(90,${rx + roomW - 24},${ry + (roomH-8)/2})">${((roomH-8)/scale).toFixed(1)}m</text>`;
+    ridx++;
   }
-  svg += `</svg>`;
-  document.getElementById('architect-2d-plan').innerHTML = `<h3>2D Floor Plan (Preview)</h3>` + svg;
-};
-</script>
-</body>
-</html>
+}
+
+// Legend for walls
+svg += `
+  <rect x="${svgW-180}" y="${svgH-60}" width="17" height="17" fill="none" stroke="#b22222" stroke-width="${wallBrick}" />
+  <text x="${svgW-155}" y="${svgH-47}" font-size="12" fill="#b22222">100mm Brickwork</text>
+  <rect x="${svgW-180}" y="${svgH-40}" width="17" height="17" fill="none" stroke="#e0e0e0" stroke-width="${wallCavity}" />
+  <text x="${svgW-155}" y="${svgH-27}" font-size="12" fill="#888">150mm Cavity/Insulation</text>
+  <rect x="${svgW-180}" y="${svgH-20}" width="17" height="17" fill="none" stroke="#808080" stroke-width="${wallBlock}" />
+  <text x="${svgW-155}" y="${svgH-7}" font-size="12" fill="#808080">100mm Blockwork</text>
+`;
+
+svg += `</svg>`;
+document.getElementById('architect-2d-plan').innerHTML = `<h3>2D Floor Plan (Preview)</h3>` + svg;
+
+// --- End Enhanced SVG Code ---
