@@ -728,6 +728,12 @@ async function convertPdfToPng(pdfFile, maxPages = 2) {
     return null;
   }
 
+  // Check if PDF.js is available
+  if (typeof pdfjsLib === 'undefined') {
+    console.error('PDF.js library is not loaded. Cannot convert PDF to PNG.');
+    throw new Error('PDF.js library is not available. Please check your internet connection or browser settings.');
+  }
+
   try {
     const arrayBuffer = await pdfFile.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
