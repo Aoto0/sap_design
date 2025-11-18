@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <title>Saps Design App</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- PDF.js library -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <style>
     body { font-family: 'Segoe UI', Arial, sans-serif; background: #f7f9fa; margin: 0; }
     .container { max-width: 400px; margin: 0 auto; background: #fff; min-height: 100vh; box-shadow: 0 4px 24px #0002; }
@@ -129,6 +131,8 @@
         <div id="plans-note" style="display:none; color:#005599; font-size:0.97em; margin-bottom:10px;">
           <b>Fields will be auto-filled from uploaded plans/spec.</b>
         </div>
+        <button type="button" onclick="analyzePlans()" style="background:#007a33;margin-bottom:10px;">Generate BoQ &amp; SAP</button>
+        <div id="analyze-status" style="color:#005599; font-size:0.95em; margin-bottom:10px;"></div>
         <div class="input-group">
           <label for="ptype">Project Type</label>
           <select id="ptype" onchange="showStoreyOptions()">
@@ -1007,6 +1011,155 @@ document.getElementById('architect-plans-form').onsubmit = function(e) {
   document.getElementById('architect-2d-plan').innerHTML = svg;
   document.getElementById('download-pdf-btn').style.display = "none";
 };
+
+// PDF.js Configuration
+if (typeof pdfjsLib !== 'undefined') {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+
+// PDF to PNG Conversion Function
+async function convertPdfToPng(file, maxPages = 2) {
+  const images = [];
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const numPages = Math.min(pdf.numPages, maxPages);
+
+    for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const viewport = page.getViewport({ scale: 2.0 });
+      
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      
+      await page.render({
+        canvasContext: context,
+        viewport: viewport
+      }).promise;
+      
+      // Convert canvas to PNG blob
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+      images.push({
+        blob: blob,
+        filename: `${file.name}_page_${pageNum}.png`,
+        pageNum: pageNum
+      });
+    }
+  } catch (error) {
+    console.error('Error converting PDF to PNG:', error);
+    throw error;
+  }
+  return images;
+}
+
+// Analyze Plans Function
+async function analyzePlans() {
+  const statusDiv = document.getElementById('analyze-status');
+  statusDiv.textContent = 'Processing plans...';
+  
+  try {
+    const allImages = [];
+    
+    // Get all uploaded files
+    const fileInputs = [
+      { id: 'plans-upload-civils', key: 'civils' },
+      { id: 'plans-upload-ground', key: 'ground' },
+      { id: 'plans-upload-first', key: 'first' },
+      { id: 'plans-upload-spec', key: 'spec' }
+    ];
+    
+    for (const input of fileInputs) {
+      const fileInput = document.getElementById(input.id);
+      const file = fileInput.files[0];
+      
+      if (!file) continue;
+      
+      const fileType = file.type;
+      const fileName = file.name.toLowerCase();
+      
+      // Handle PDFs
+      if (fileType === 'application/pdf' || fileName.endsWith('.pdf')) {
+        statusDiv.textContent = `Converting ${file.name} to images...`;
+        const pdfImages = await convertPdfToPng(file, 2);
+        allImages.push(...pdfImages.map(img => ({
+          ...img,
+          category: input.key
+        })));
+      }
+      // Handle image files (JPG, PNG)
+      else if (fileType.startsWith('image/')) {
+        allImages.push({
+          blob: file,
+          filename: file.name,
+          category: input.key
+        });
+      }
+    }
+    
+    if (allImages.length === 0) {
+      statusDiv.textContent = 'No PDF or image files uploaded. Please upload plans first.';
+      return;
+    }
+    
+    // Prepare FormData for API call
+    const formData = new FormData();
+    allImages.forEach((img, index) => {
+      formData.append(`file_${index}`, img.blob, img.filename);
+      formData.append(`category_${index}`, img.category);
+    });
+    
+    // Add project metadata
+    const projectName = document.getElementById('pname').value;
+    const projectType = document.getElementById('ptype').value;
+    formData.append('project_name', projectName);
+    formData.append('project_type', projectType);
+    
+    statusDiv.textContent = `Sending ${allImages.length} image(s) to analyze...`;
+    
+    // Call the analyze API
+    try {
+      const response = await fetch('/api/analyze-plans', {
+        method: 'POST',
+        body: formData
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        statusDiv.innerHTML = `<span style="color:#007a33;">✓ Analysis complete! ${allImages.length} file(s) processed.</span>`;
+        
+        // Auto-fill fields if API returns data
+        if (result.floor_area) {
+          document.getElementById('floor-area').value = result.floor_area;
+        }
+        if (result.wall_area) {
+          document.getElementById('wall-area').value = result.wall_area;
+        }
+        if (result.roof_area) {
+          document.getElementById('roof-area').value = result.roof_area;
+        }
+        if (result.ceiling_height) {
+          document.getElementById('ceiling-height').value = result.ceiling_height;
+        }
+        
+        // Show the plans note
+        document.getElementById('plans-note').style.display = '';
+      } else {
+        statusDiv.innerHTML = `<span style="color:#d33;">Analysis failed. Server returned: ${response.status}</span>`;
+      }
+    } catch (fetchError) {
+      // If API doesn't exist yet, show a demo message
+      statusDiv.innerHTML = `<span style="color:#007a33;">✓ PDF processing complete! ${allImages.length} image(s) ready for analysis.<br>Note: /api/analyze-plans endpoint not yet available.</span>`;
+      document.getElementById('plans-note').style.display = '';
+    }
+    
+  } catch (error) {
+    statusDiv.innerHTML = `<span style="color:#d33;">Error: ${error.message}</span>`;
+    console.error('Analyze error:', error);
+  }
+}
+
 
 </script>
 </body>
