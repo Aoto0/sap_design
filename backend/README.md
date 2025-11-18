@@ -19,6 +19,12 @@ python server.py
 
 The server will start on `http://localhost:5000`
 
+To run in debug mode (for development only, never in production):
+
+```bash
+FLASK_DEBUG=1 python server.py
+```
+
 ## API Endpoints
 
 ### POST /api/recalc
@@ -134,10 +140,12 @@ Stub endpoint for reference (not implemented).
 
 ## Development
 
-To run in debug mode:
+To run in debug mode (development only):
 
 ```bash
-python server.py
+FLASK_DEBUG=1 python server.py
 ```
+
+**Warning**: Never run with debug mode enabled in production as it may allow attackers to execute arbitrary code through the debugger.
 
 The server runs on port 5000 by default.
