@@ -48,7 +48,17 @@
       .labour-table, .materials-table, .total-table {font-size:0.93em;}
     }
     .upload-multifiles-note {font-size:0.95em; color:#005599;}
+    .loading-indicator {background:#e7f0fa; padding:12px; border-radius:7px; margin:12px 0; text-align:center; color:#003366;}
+    .analyze-btn {background:#007a33 !important; margin-top:15px;}
   </style>
+  <!-- PDF.js library for client-side PDF processing -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    // Configure PDF.js worker
+    if (typeof pdfjsLib !== 'undefined') {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+  </script>
 </head>
 <body>
   <div class="container">
@@ -147,6 +157,10 @@
             <option value="3">3</option>
           </select>
         </div>
+        <div id="analyze-loading" class="loading-indicator hidden">
+          Processing PDFs and analyzing plans... Please wait.
+        </div>
+        <button type="button" class="analyze-btn" onclick="analyzeUploadedPlans()">Generate BoQ &amp; SAP</button>
         <button type="submit">Create Project</button>
         <button class="top-btn" type="button" onclick="showProjects()">Back</button>
       </form>
@@ -437,7 +451,14 @@ document.getElementById('add-project-screen').onsubmit = function(e) {
   const ppostcode = document.getElementById('ppostcode').value;
   const ptype = document.getElementById('ptype').options[document.getElementById('ptype').selectedIndex].text;
   const storeys = document.getElementById('storeys').value;
-  projects.push({ name: pname, address1: paddr1, address2: paddr2, address3: paddr3, postcode: ppostcode, type: ptype, storeys: storeys, plans: {...uploadedPlans} });
+  // Store only filenames for project data (File objects can't be serialized)
+  const planNames = {
+    civils: uploadedPlans.civils ? uploadedPlans.civils.name : null,
+    ground: uploadedPlans.ground ? uploadedPlans.ground.name : null,
+    first: uploadedPlans.first ? uploadedPlans.first.name : null,
+    spec: uploadedPlans.spec ? uploadedPlans.spec.name : null
+  };
+  projects.push({ name: pname, address1: paddr1, address2: paddr2, address3: paddr3, postcode: ppostcode, type: ptype, storeys: storeys, plans: planNames });
   uploadedPlans = { civils: null, ground: null, first: null, spec: null };
   document.getElementById('uploaded-files-list-civils').innerHTML = '';
   document.getElementById('uploaded-files-list-ground').innerHTML = '';
@@ -675,7 +696,7 @@ function generateReport() {
 function handleFileUpload(inputId, listId, key) {
   document.getElementById(inputId).addEventListener('change', function(e) {
     const file = e.target.files[0];
-    uploadedPlans[key] = file ? file.name : null;
+    uploadedPlans[key] = file || null; // Store the actual File object
     document.getElementById(listId).innerHTML = file ? `<div class='uploaded-file'><b>Uploaded:</b> ${file.name}</div>` : "";
     updatePlansMessage();
   });
@@ -687,13 +708,185 @@ function updatePlansMessage() {
   if (uploadedPlans.first) files.push("First Floor");
   if (uploadedPlans.spec) files.push("Spec");
   document.getElementById('plans-message').textContent =
-    files.length ? `Uploaded: ${files.join(', ')}. Fields will be auto-filled after project creation.` : '';
+    files.length ? `Uploaded: ${files.join(', ')}. Click "Generate BoQ & SAP" to analyze PDFs.` : '';
   document.getElementById('plans-note').style.display = files.length ? '' : 'none';
 }
 handleFileUpload('plans-upload-civils', 'uploaded-files-list-civils', 'civils');
 handleFileUpload('plans-upload-ground', 'uploaded-files-list-ground', 'ground');
 handleFileUpload('plans-upload-first', 'uploaded-files-list-first', 'first');
 handleFileUpload('plans-upload-spec', 'uploaded-files-list-spec', 'spec');
+
+/* --- PDF to PNG conversion and analysis functions --- */
+/**
+ * Convert a PDF file to PNG images (first 1-2 pages only)
+ * @param {File} pdfFile - The PDF file to convert
+ * @param {number} maxPages - Maximum number of pages to convert (default 2)
+ * @returns {Promise<Array>} Array of PNG data URLs
+ */
+async function convertPdfToPng(pdfFile, maxPages = 2) {
+  if (!pdfFile || pdfFile.type !== 'application/pdf') {
+    return null;
+  }
+
+  try {
+    const arrayBuffer = await pdfFile.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const numPages = Math.min(pdf.numPages, maxPages);
+    const images = [];
+
+    for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const viewport = page.getViewport({ scale: 2.0 }); // 2x scale for better quality
+      
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+
+      await page.render({
+        canvasContext: context,
+        viewport: viewport
+      }).promise;
+
+      // Convert canvas to PNG data URL
+      images.push({
+        dataUrl: canvas.toDataURL('image/png'),
+        pageNum: pageNum,
+        fileName: `${pdfFile.name}_page_${pageNum}.png`
+      });
+    }
+
+    return images;
+  } catch (error) {
+    console.error('Error converting PDF to PNG:', error);
+    return null;
+  }
+}
+
+/**
+ * Process all uploaded files and send to analysis API
+ */
+async function analyzeUploadedPlans() {
+  const loadingDiv = document.getElementById('analyze-loading');
+  
+  // Check if any files are uploaded
+  const hasFiles = uploadedPlans.civils || uploadedPlans.ground || 
+                   uploadedPlans.first || uploadedPlans.spec;
+  
+  if (!hasFiles) {
+    alert('Please upload at least one plan or specification file before analyzing.');
+    return;
+  }
+
+  // Show loading indicator
+  loadingDiv.classList.remove('hidden');
+
+  try {
+    const imagesToAnalyze = [];
+
+    // Process each uploaded file
+    for (const key of ['civils', 'ground', 'first', 'spec']) {
+      const file = uploadedPlans[key];
+      if (!file) continue;
+
+      if (file.type === 'application/pdf') {
+        // Convert PDF to PNG
+        const pngImages = await convertPdfToPng(file, 2);
+        if (pngImages) {
+          imagesToAnalyze.push(...pngImages.map(img => ({
+            type: key,
+            dataUrl: img.dataUrl,
+            fileName: img.fileName
+          })));
+        }
+      } else if (file.type.startsWith('image/')) {
+        // Already an image, read as data URL
+        const dataUrl = await readFileAsDataUrl(file);
+        imagesToAnalyze.push({
+          type: key,
+          dataUrl: dataUrl,
+          fileName: file.name
+        });
+      }
+      // Skip .doc/.docx files as they can't be analyzed as images
+    }
+
+    if (imagesToAnalyze.length === 0) {
+      alert('No images or PDFs found to analyze. Please upload PDF, JPG, or PNG files.');
+      loadingDiv.classList.add('hidden');
+      return;
+    }
+
+    // Send to analysis API
+    await sendToAnalyzeApi(imagesToAnalyze);
+
+  } catch (error) {
+    console.error('Error analyzing plans:', error);
+    alert('Error analyzing plans: ' + error.message);
+  } finally {
+    loadingDiv.classList.add('hidden');
+  }
+}
+
+/**
+ * Read a file as data URL
+ * @param {File} file - The file to read
+ * @returns {Promise<string>} Data URL
+ */
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(e.target.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * Send converted images to the analysis API
+ * @param {Array} images - Array of image objects with dataUrl and metadata
+ */
+async function sendToAnalyzeApi(images) {
+  try {
+    const response = await fetch('/api/analyze-plans', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        images: images.map(img => ({
+          type: img.type,
+          fileName: img.fileName,
+          data: img.dataUrl
+        }))
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status} ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    
+    // Display the analysis results
+    alert('Analysis complete! Results:\n' + JSON.stringify(result, null, 2));
+    
+    // You can update the form fields here based on the API response
+    // For example:
+    // if (result.floorArea) document.getElementById('floor-area').value = result.floorArea;
+    
+  } catch (error) {
+    // If API endpoint doesn't exist yet, show a helpful message
+    if (error.message.includes('404') || error.message.includes('Failed to fetch')) {
+      alert('Analysis complete! PDFs converted to PNG successfully.\n\n' +
+            'Note: The /api/analyze-plans endpoint is not yet implemented on the backend.\n' +
+            'Images were prepared and would be sent to the API:\n' +
+            images.map(img => `- ${img.fileName} (${img.type})`).join('\n'));
+    } else {
+      throw error;
+    }
+  }
+}
 
 /* --- Materials list generator --- */
 function generateMaterialsList(inNewWindow) {
