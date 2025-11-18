@@ -4,6 +4,14 @@
   <meta charset="UTF-8">
   <title>Saps Design App</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- PDF.js CDN for PDF rendering -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    // Configure PDF.js worker
+    if (typeof pdfjsLib !== 'undefined') {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+  </script>
   <style>
     body { font-family: 'Segoe UI', Arial, sans-serif; background: #f7f9fa; margin: 0; }
     .container { max-width: 400px; margin: 0 auto; background: #fff; min-height: 100vh; box-shadow: 0 4px 24px #0002; }
@@ -48,6 +56,12 @@
       .labour-table, .materials-table, .total-table {font-size:0.93em;}
     }
     .upload-multifiles-note {font-size:0.95em; color:#005599;}
+    .analyze-status {background:#e7f0fa; border-left:4px solid #0067b8; padding:10px; margin:15px 0; border-radius:4px; font-size:0.95em;}
+    .analyze-status.success {background:#e7f7ed; border-left-color:#007a33;}
+    .analyze-status.error {background:#ffe7e7; border-left-color:#d33;}
+    .analyze-btn {background:#8b5cf6 !important; margin-bottom:10px;}
+    .analyze-btn:hover {background:#7c3aed !important;}
+    .analyze-btn:disabled {background:#ccc !important; cursor:not-allowed;}
   </style>
 </head>
 <body>
@@ -157,6 +171,15 @@
         <div id="plans-note-details" style="display:none; color:#005599; font-size:0.97em; margin-bottom:10px;">
           <b>Fields auto-filled from uploaded plans/spec.</b>
         </div>
+        
+        <!-- Analyze Plans Button and Status -->
+        <div id="analyze-plans-container" style="display:none;">
+          <button type="button" id="analyze-plans-btn" class="analyze-btn" onclick="analyzePlansForCurrentProject()">
+            🤖 Analyze Plans with Claude (beta)
+          </button>
+          <div id="analyze-status" class="analyze-status" style="display:none;"></div>
+        </div>
+        
         <div class="input-group">
           <label for="ceiling-height">Ceiling Height (m)</label>
           <input type="number" id="ceiling-height" min="2" max="5" step="0.01" value="2.4">
@@ -392,6 +415,17 @@ let projects = [], currentProject = null, uvalManual = {floor: false, wall: fals
   spec: null
 };
 
+// Store actual File objects for plan analysis
+let projectFiles = {
+  civils: null,
+  ground: null,
+  first: null,
+  spec: null
+};
+
+// Backend API base URL
+const BACKEND_BASE = 'http://localhost:8787';
+
 function showScreen(id) {
   document.querySelectorAll('.content > *').forEach(e => e.classList.add('hidden'));
   document.getElementById(id).classList.remove('hidden');
@@ -437,8 +471,19 @@ document.getElementById('add-project-screen').onsubmit = function(e) {
   const ppostcode = document.getElementById('ppostcode').value;
   const ptype = document.getElementById('ptype').options[document.getElementById('ptype').selectedIndex].text;
   const storeys = document.getElementById('storeys').value;
-  projects.push({ name: pname, address1: paddr1, address2: paddr2, address3: paddr3, postcode: ppostcode, type: ptype, storeys: storeys, plans: {...uploadedPlans} });
+  projects.push({ 
+    name: pname, 
+    address1: paddr1, 
+    address2: paddr2, 
+    address3: paddr3, 
+    postcode: ppostcode, 
+    type: ptype, 
+    storeys: storeys, 
+    plans: {...uploadedPlans},
+    files: {...projectFiles}  // Store actual File objects
+  });
   uploadedPlans = { civils: null, ground: null, first: null, spec: null };
+  projectFiles = { civils: null, ground: null, first: null, spec: null };
   document.getElementById('uploaded-files-list-civils').innerHTML = '';
   document.getElementById('uploaded-files-list-ground').innerHTML = '';
   document.getElementById('uploaded-files-list-first').innerHTML = '';
@@ -468,8 +513,20 @@ function editProject(idx) {
   windowsData = [{wall:"Front",width:1.2,height:1.2, type:"Double Glazed"}];
   renderWindows();
   showSolarPVInput();
-  if (p.plans && (p.plans.civils || p.plans.ground || p.plans.first || p.plans.spec)) { document.getElementById('plans-note-details').style.display = ''; }
-  else { document.getElementById('plans-note-details').style.display = 'none'; }
+  
+  // Show analyze button if project has uploaded files
+  const hasFiles = p.files && (p.files.civils || p.files.ground || p.files.first || p.files.spec);
+  if (hasFiles) {
+    document.getElementById('analyze-plans-container').style.display = '';
+    document.getElementById('plans-note-details').style.display = '';
+  } else {
+    document.getElementById('analyze-plans-container').style.display = 'none';
+    document.getElementById('plans-note-details').style.display = 'none';
+  }
+  
+  // Hide status from previous analysis
+  document.getElementById('analyze-status').style.display = 'none';
+  
   showScreen('project-details-screen');
 }
 function fillUValDropdowns() {
@@ -676,6 +733,7 @@ function handleFileUpload(inputId, listId, key) {
   document.getElementById(inputId).addEventListener('change', function(e) {
     const file = e.target.files[0];
     uploadedPlans[key] = file ? file.name : null;
+    projectFiles[key] = file || null;  // Store actual File object
     document.getElementById(listId).innerHTML = file ? `<div class='uploaded-file'><b>Uploaded:</b> ${file.name}</div>` : "";
     updatePlansMessage();
   });
@@ -694,6 +752,211 @@ handleFileUpload('plans-upload-civils', 'uploaded-files-list-civils', 'civils');
 handleFileUpload('plans-upload-ground', 'uploaded-files-list-ground', 'ground');
 handleFileUpload('plans-upload-first', 'uploaded-files-list-first', 'first');
 handleFileUpload('plans-upload-spec', 'uploaded-files-list-spec', 'spec');
+
+/* --- Claude Plan Analysis Functions --- */
+
+/**
+ * Convert a File (PDF or image) to an array of base64-encoded image data URLs
+ * PDFs are rendered to PNG images (first 1-2 pages), images are converted directly
+ */
+async function fileToImageDataURLs(file) {
+  if (!file) return [];
+  
+  const fileType = file.type;
+  
+  // Handle image files directly
+  if (fileType.startsWith('image/')) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const base64 = e.target.result.split(',')[1]; // Remove data:image/...;base64, prefix
+        const mimeType = fileType;
+        resolve([{ data: base64, mimeType }]);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+  
+  // Handle PDF files with PDF.js
+  if (fileType === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+    if (typeof pdfjsLib === 'undefined') {
+      throw new Error('PDF.js library not loaded');
+    }
+    
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      const numPages = Math.min(pdf.numPages, 2); // Limit to first 2 pages
+      const images = [];
+      
+      for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+        const page = await pdf.getPage(pageNum);
+        const viewport = page.getViewport({ scale: 2.0 }); // Higher scale for better quality
+        
+        // Create canvas
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        
+        // Render PDF page to canvas
+        await page.render({
+          canvasContext: context,
+          viewport: viewport
+        }).promise;
+        
+        // Convert canvas to base64
+        const dataURL = canvas.toDataURL('image/png');
+        const base64 = dataURL.split(',')[1];
+        images.push({ data: base64, mimeType: 'image/png' });
+      }
+      
+      return images;
+    } catch (error) {
+      console.error('Error processing PDF:', error);
+      throw new Error('Failed to process PDF file');
+    }
+  }
+  
+  // Unsupported file type
+  return [];
+}
+
+/**
+ * Analyze plans for the current project using Claude API
+ */
+async function analyzePlansForCurrentProject() {
+  if (currentProject === null) {
+    alert('No project selected');
+    return;
+  }
+  
+  const project = projects[currentProject];
+  if (!project.files) {
+    alert('No files uploaded for this project');
+    return;
+  }
+  
+  const btn = document.getElementById('analyze-plans-btn');
+  const statusDiv = document.getElementById('analyze-status');
+  
+  // Disable button and show processing status
+  btn.disabled = true;
+  btn.textContent = '⏳ Analyzing plans...';
+  statusDiv.className = 'analyze-status';
+  statusDiv.style.display = '';
+  statusDiv.textContent = 'Converting plans to images and sending to Claude AI...';
+  
+  try {
+    // Collect all uploaded files
+    const filesToAnalyze = [];
+    if (project.files.civils) filesToAnalyze.push(project.files.civils);
+    if (project.files.ground) filesToAnalyze.push(project.files.ground);
+    if (project.files.first) filesToAnalyze.push(project.files.first);
+    if (project.files.spec) filesToAnalyze.push(project.files.spec);
+    
+    if (filesToAnalyze.length === 0) {
+      throw new Error('No files to analyze');
+    }
+    
+    // Convert files to images (limit to 4 total)
+    statusDiv.textContent = 'Converting files to images...';
+    const allImages = [];
+    for (const file of filesToAnalyze.slice(0, 4)) {
+      try {
+        const images = await fileToImageDataURLs(file);
+        allImages.push(...images);
+      } catch (error) {
+        console.error('Error converting file:', file.name, error);
+      }
+    }
+    
+    if (allImages.length === 0) {
+      throw new Error('Failed to convert any files to images. Please ensure files are PDF or image format (PNG, JPEG).');
+    }
+    
+    // Send to backend
+    statusDiv.textContent = `Sending ${allImages.length} image(s) to Claude AI for analysis...`;
+    const response = await fetch(`${BACKEND_BASE}/api/analyze-plans`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        images: allImages
+      })
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Server error: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    
+    if (!result.ok || !result.data) {
+      throw new Error(result.error || 'Invalid response from server');
+    }
+    
+    const analysis = result.data;
+    
+    // Auto-fill form fields
+    statusDiv.textContent = 'Analysis complete! Auto-filling fields...';
+    
+    // Fill metrics
+    if (analysis.metrics) {
+      if (analysis.metrics.floor_area_m2) {
+        document.getElementById('floor-area').value = Math.round(analysis.metrics.floor_area_m2);
+      }
+      if (analysis.metrics.wall_area_m2) {
+        document.getElementById('wall-area').value = Math.round(analysis.metrics.wall_area_m2);
+      }
+      if (analysis.metrics.roof_area_m2) {
+        document.getElementById('roof-area').value = Math.round(analysis.metrics.roof_area_m2);
+      }
+      if (analysis.metrics.ceiling_height_m) {
+        document.getElementById('ceiling-height').value = analysis.metrics.ceiling_height_m.toFixed(2);
+      }
+    }
+    
+    // Fill rooms count
+    if (analysis.rooms && analysis.rooms.length > 0) {
+      document.getElementById('num-rooms').value = analysis.rooms.length;
+    }
+    
+    // Fill windows
+    if (analysis.windows && analysis.windows.length > 0) {
+      windowsData = analysis.windows.map(w => ({
+        wall: w.location ? (w.location.charAt(0).toUpperCase() + w.location.slice(1)) : 'Front',
+        width: w.width_m || 1.2,
+        height: w.height_m || 1.2,
+        type: w.type || 'Double Glazed'
+      }));
+      renderWindows();
+    }
+    
+    // Show success message with confidence
+    const confidenceText = analysis.confidence ? ` (Confidence: ${analysis.confidence})` : '';
+    let message = `✅ Analysis complete${confidenceText}. Fields have been auto-filled with extracted measurements.`;
+    
+    if (analysis.assumptions && analysis.assumptions.length > 0) {
+      message += '<br><br><b>Assumptions made:</b><br>• ' + analysis.assumptions.join('<br>• ');
+    }
+    
+    statusDiv.className = 'analyze-status success';
+    statusDiv.innerHTML = message;
+    
+  } catch (error) {
+    console.error('Analysis error:', error);
+    statusDiv.className = 'analyze-status error';
+    statusDiv.innerHTML = `❌ Error: ${error.message}<br><br>Please ensure:<br>• Backend server is running on ${BACKEND_BASE}<br>• API key is configured in server/.env<br>• Files are valid PDF or image formats`;
+  } finally {
+    // Re-enable button
+    btn.disabled = false;
+    btn.textContent = '🤖 Analyze Plans with Claude (beta)';
+  }
+}
 
 /* --- Materials list generator --- */
 function generateMaterialsList(inNewWindow) {
