@@ -48,6 +48,22 @@
       .labour-table, .materials-table, .total-table {font-size:0.93em;}
     }
     .upload-multifiles-note {font-size:0.95em; color:#005599;}
+    #analyze-status {padding:10px;margin:12px 0;border-radius:6px;font-size:0.97em;display:none;}
+    #analyze-status.loading {background:#fff3cd;border:1px solid #ffc107;color:#856404;}
+    #analyze-status.success {background:#d4edda;border:1px solid #28a745;color:#155724;}
+    #analyze-status.error {background:#f8d7da;border:1px solid #dc3545;color:#721c24;}
+    #analyze-plans-btn {display:none;background:#007a33;margin-top:10px;}
+    #analysis-report {margin-top:20px;display:none;}
+    .analysis-tab-buttons {display:flex;gap:5px;margin-bottom:10px;}
+    .analysis-tab-buttons button {flex:1;padding:8px;background:#e7f0fa;color:#003366;border:1px solid #005599;cursor:pointer;border-radius:4px;}
+    .analysis-tab-buttons button.active {background:#005599;color:#fff;}
+    .analysis-panel {display:none;background:#f5fafc;padding:12px;border-radius:6px;margin-bottom:10px;}
+    .analysis-panel.active {display:block;}
+    .analysis-table {width:100%;border-collapse:collapse;margin-top:8px;font-size:0.95em;}
+    .analysis-table th, .analysis-table td {padding:6px 8px;border-bottom:1px solid #ddd;text-align:left;}
+    .analysis-table th {background:#e7f0fa;font-weight:bold;}
+    .analysis-table button {background:#005599;color:#fff;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.9em;}
+    .analysis-table button.recalc {background:#007a33;}
   </style>
 </head>
 <body>
@@ -156,6 +172,45 @@
         <div class="section-title" id="project-title"></div>
         <div id="plans-note-details" style="display:none; color:#005599; font-size:0.97em; margin-bottom:10px;">
           <b>Fields auto-filled from uploaded plans/spec.</b>
+        </div>
+        <div id="analyze-status"></div>
+        <button type="button" id="analyze-plans-btn" onclick="analyzePlansForCurrentProject()">Generate BoQ &amp; SAP</button>
+        <div id="analysis-report">
+          <h3 style="color:#003366;margin-top:20px;">Analysis Report</h3>
+          <div class="analysis-tab-buttons" id="analysis-tab-buttons">
+            <button onclick="switchAnalysisTab('materials')">Materials &amp; Costs</button>
+            <button onclick="switchAnalysisTab('uvalues')">U-Values &amp; SAP</button>
+            <button onclick="switchAnalysisTab('wiring')">Wiring (18th Ed)</button>
+            <button onclick="switchAnalysisTab('assumptions')">Assumptions &amp; Compliance</button>
+          </div>
+          <div id="materials-panel" class="analysis-panel">
+            <table class="analysis-table">
+              <thead><tr><th>Item</th><th>Quantity</th><th>Unit</th><th>Labour Hrs</th><th>Labour Cost (£)</th><th>Method</th><th>Action</th></tr></thead>
+              <tbody id="materials-body"></tbody>
+            </table>
+            <button type="button" class="recalc" style="margin-top:10px;" onclick="recalculateMaterials()">Recalculate (Stub)</button>
+          </div>
+          <div id="uvalues-panel" class="analysis-panel">
+            <h4>Element U-Values</h4>
+            <table class="analysis-table">
+              <thead><tr><th>Element</th><th>Area (m²)</th><th>U-Value</th><th>Part L Target</th><th>Status</th></tr></thead>
+              <tbody id="uvalues-body"></tbody>
+            </table>
+            <h4 style="margin-top:16px;">SAP Summary</h4>
+            <div id="sap-summary" style="background:#e7f0fa;padding:10px;border-radius:6px;"></div>
+          </div>
+          <div id="wiring-panel" class="analysis-panel">
+            <table class="analysis-table">
+              <thead><tr><th>Room</th><th>Sockets</th><th>Light Points</th></tr></thead>
+              <tbody id="wiring-body"></tbody>
+            </table>
+          </div>
+          <div id="assumptions-panel" class="analysis-panel">
+            <h4>Assumptions</h4>
+            <ul id="assumptions-list" style="margin:8px 0;padding-left:20px;"></ul>
+            <h4 style="margin-top:16px;">Compliance Flags</h4>
+            <div id="compliance-flags" style="background:#fff3cd;padding:10px;border-radius:6px;"></div>
+          </div>
         </div>
         <div class="input-group">
           <label for="ceiling-height">Ceiling Height (m)</label>
@@ -321,6 +376,9 @@
 <script>
 // Copyright © 2025 Parallax Project Management LTD. All Rights Reserved.
 
+// Backend configuration - set to 'http://localhost:8787' for local dev
+const BACKEND_BASE = '';
+
 const UVALS = {
   floor: [
     {name: "Solid Concrete + 100mm Insulation", u: 0.16, insulation: "100mm"},
@@ -390,7 +448,12 @@ let projects = [], currentProject = null, uvalManual = {floor: false, wall: fals
   ground: null,
   first: null,
   spec: null
-};
+}, uploadedPlanFiles = {
+  civils: null,
+  ground: null,
+  first: null,
+  spec: null
+}, latestAnalysis = null;
 
 function showScreen(id) {
   document.querySelectorAll('.content > *').forEach(e => e.classList.add('hidden'));
@@ -437,8 +500,9 @@ document.getElementById('add-project-screen').onsubmit = function(e) {
   const ppostcode = document.getElementById('ppostcode').value;
   const ptype = document.getElementById('ptype').options[document.getElementById('ptype').selectedIndex].text;
   const storeys = document.getElementById('storeys').value;
-  projects.push({ name: pname, address1: paddr1, address2: paddr2, address3: paddr3, postcode: ppostcode, type: ptype, storeys: storeys, plans: {...uploadedPlans} });
+  projects.push({ name: pname, address1: paddr1, address2: paddr2, address3: paddr3, postcode: ppostcode, type: ptype, storeys: storeys, plans: {...uploadedPlans}, planFiles: {...uploadedPlanFiles} });
   uploadedPlans = { civils: null, ground: null, first: null, spec: null };
+  uploadedPlanFiles = { civils: null, ground: null, first: null, spec: null };
   document.getElementById('uploaded-files-list-civils').innerHTML = '';
   document.getElementById('uploaded-files-list-ground').innerHTML = '';
   document.getElementById('uploaded-files-list-first').innerHTML = '';
@@ -470,6 +534,11 @@ function editProject(idx) {
   showSolarPVInput();
   if (p.plans && (p.plans.civils || p.plans.ground || p.plans.first || p.plans.spec)) { document.getElementById('plans-note-details').style.display = ''; }
   else { document.getElementById('plans-note-details').style.display = 'none'; }
+  // Show analyze button if project has any plan files
+  const hasPlans = p.planFiles && (p.planFiles.civils || p.planFiles.ground || p.planFiles.first || p.planFiles.spec);
+  document.getElementById('analyze-plans-btn').style.display = hasPlans ? '' : 'none';
+  document.getElementById('analysis-report').style.display = 'none';
+  document.getElementById('analyze-status').style.display = 'none';
   showScreen('project-details-screen');
 }
 function fillUValDropdowns() {
@@ -676,6 +745,7 @@ function handleFileUpload(inputId, listId, key) {
   document.getElementById(inputId).addEventListener('change', function(e) {
     const file = e.target.files[0];
     uploadedPlans[key] = file ? file.name : null;
+    uploadedPlanFiles[key] = file || null;
     document.getElementById(listId).innerHTML = file ? `<div class='uploaded-file'><b>Uploaded:</b> ${file.name}</div>` : "";
     updatePlansMessage();
   });
@@ -1007,6 +1077,271 @@ document.getElementById('architect-plans-form').onsubmit = function(e) {
   document.getElementById('architect-2d-plan').innerHTML = svg;
   document.getElementById('download-pdf-btn').style.display = "none";
 };
+
+/* --- Analysis Report Functions --- */
+async function analyzePlansForCurrentProject() {
+  if (currentProject === null) return;
+  const p = projects[currentProject];
+  if (!p.planFiles) {
+    alert('No plan files available for analysis.');
+    return;
+  }
+
+  // Collect up to 4 plan files (only images for now, PDF support later)
+  const planFilesArray = [p.planFiles.civils, p.planFiles.ground, p.planFiles.first, p.planFiles.spec].filter(Boolean);
+  if (planFilesArray.length === 0) {
+    alert('No plan files uploaded for this project.');
+    return;
+  }
+
+  // Show loading status
+  const statusEl = document.getElementById('analyze-status');
+  statusEl.className = 'loading';
+  statusEl.textContent = 'Analyzing plans... This may take a moment.';
+  statusEl.style.display = '';
+
+  try {
+    // Convert image files to base64
+    const images = [];
+    for (let i = 0; i < Math.min(planFilesArray.length, 4); i++) {
+      const file = planFilesArray[i];
+      if (!file) continue;
+
+      // Only process image files (jpg, jpeg, png)
+      const isImage = /\.(jpg|jpeg|png)$/i.test(file.name);
+      if (!isImage) continue;
+
+      const base64 = await fileToBase64(file);
+      const mediaType = file.type || 'image/jpeg';
+      images.push({ data: base64, media_type: mediaType });
+    }
+
+    if (images.length === 0) {
+      statusEl.className = 'error';
+      statusEl.textContent = 'No supported image files found. Only JPG/PNG are supported in this version.';
+      return;
+    }
+
+    // Determine project type
+    const projectType = p.type || 'new-build-house';
+
+    // POST to backend
+    const response = await fetch(`${BACKEND_BASE || ''}/api/analyze-plans`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ images, projectType })
+    });
+
+    if (!response.ok) {
+      let errorMsg = `Server error: ${response.status}`;
+      try {
+        const errorData = await response.json();
+        errorMsg = typeof errorData.error === 'string' ? errorData.error : JSON.stringify(errorData.error || errorData);
+      } catch (e) {
+        errorMsg = await response.text();
+      }
+      throw new Error(errorMsg);
+    }
+
+    const result = await response.json();
+    latestAnalysis = result;
+
+    // Auto-fill fields from analysis result
+    if (result.source_raw) {
+      if (result.source_raw.floor_area) {
+        document.getElementById('floor-area').value = result.source_raw.floor_area;
+      }
+      if (result.source_raw.wall_area) {
+        document.getElementById('wall-area').value = result.source_raw.wall_area;
+      }
+      if (result.source_raw.roof_area) {
+        document.getElementById('roof-area').value = result.source_raw.roof_area;
+      }
+      if (result.source_raw.ceiling_height) {
+        document.getElementById('ceiling-height').value = result.source_raw.ceiling_height;
+      }
+      if (result.source_raw.num_rooms) {
+        document.getElementById('num-rooms').value = result.source_raw.num_rooms;
+      }
+      // Build windowsData from source_raw.windows
+      if (result.source_raw.windows && result.source_raw.windows.length > 0) {
+        windowsData = result.source_raw.windows.map(w => ({
+          wall: w.wall || 'Front',
+          width: w.width || 1.2,
+          height: w.height || 1.2,
+          type: w.type || 'Double Glazed'
+        }));
+        renderWindows();
+      }
+    }
+
+    // Show success status
+    statusEl.className = 'success';
+    statusEl.textContent = 'Analysis complete! Report generated below.';
+
+    // Render analysis panels
+    renderAnalysisPanels();
+
+    // Show the analysis report section
+    document.getElementById('analysis-report').style.display = '';
+    switchAnalysisTab('materials');
+
+  } catch (error) {
+    statusEl.className = 'error';
+    statusEl.textContent = `Error: ${error.message}`;
+    console.error('Analysis error:', error);
+  }
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      // Remove data URL prefix (e.g., "data:image/jpeg;base64,")
+      const base64 = reader.result.split(',')[1];
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function renderAnalysisPanels() {
+  if (!latestAnalysis) return;
+
+  // Materials & Costs tab
+  const materialsBody = document.getElementById('materials-body');
+  materialsBody.innerHTML = '';
+  if (latestAnalysis.materials && latestAnalysis.materials.length > 0) {
+    latestAnalysis.materials.forEach((mat, idx) => {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${mat.item || ''}</td>
+        <td>${mat.quantity || 0}</td>
+        <td>${mat.unit || ''}</td>
+        <td>${mat.labour_hours || 0}</td>
+        <td>${mat.labour_cost_gbp || 0}</td>
+        <td>${mat.method || ''}</td>
+        <td><button onclick="editMaterialQuantity(${idx})">Edit</button></td>
+      `;
+      materialsBody.appendChild(row);
+    });
+  } else {
+    materialsBody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#888;">No materials data available</td></tr>';
+  }
+
+  // U-Values & SAP tab
+  const uvaluesBody = document.getElementById('uvalues-body');
+  uvaluesBody.innerHTML = '';
+  const elements = ['wall', 'roof', 'floor', 'window', 'door'];
+  const partLTargets = { wall: 0.18, roof: 0.16, floor: 0.18, window: 1.4, door: 1.4 };
+  
+  elements.forEach(elem => {
+    if (latestAnalysis[elem]) {
+      const data = latestAnalysis[elem];
+      const area = data.area || 0;
+      const uval = data.u_value || data.u || 0;
+      const target = partLTargets[elem] || 0;
+      const pass = uval <= target;
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${elem.charAt(0).toUpperCase() + elem.slice(1)}</td>
+        <td>${area.toFixed(2)}</td>
+        <td>${uval.toFixed(2)}</td>
+        <td>${target.toFixed(2)}</td>
+        <td style="color:${pass ? 'green' : 'red'};font-weight:bold;">${pass ? 'PASS' : 'FAIL'}</td>
+      `;
+      uvaluesBody.appendChild(row);
+    }
+  });
+
+  // SAP Summary
+  const sapSummary = document.getElementById('sap-summary');
+  if (latestAnalysis.sap) {
+    const sap = latestAnalysis.sap;
+    sapSummary.innerHTML = `
+      <b>DER:</b> ${sap.der || 'N/A'} kgCO₂/m²/year (Target: ${sap.ter || 'N/A'})<br>
+      <b>DFEE:</b> ${sap.dfee || 'N/A'} kWh/m²/year (Target: ${sap.tfee || 'N/A'})<br>
+      <b>EPC Band:</b> ${sap.epc_band || 'N/A'}<br>
+      <b>Heat Loss (W/K):</b> ${sap.heat_loss_wk || 'N/A'}<br>
+      <b>Confidence:</b> ${sap.confidence || 'N/A'}%
+    `;
+  } else {
+    sapSummary.innerHTML = '<i>No SAP data available</i>';
+  }
+
+  // Wiring tab
+  const wiringBody = document.getElementById('wiring-body');
+  wiringBody.innerHTML = '';
+  if (latestAnalysis.wiring && latestAnalysis.wiring.rooms && latestAnalysis.wiring.rooms.length > 0) {
+    latestAnalysis.wiring.rooms.forEach(room => {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${room.name || ''}</td>
+        <td>${room.sockets || 0}</td>
+        <td>${room.light_points || 0}</td>
+      `;
+      wiringBody.appendChild(row);
+    });
+  } else {
+    wiringBody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#888;">No wiring data available</td></tr>';
+  }
+
+  // Assumptions & Compliance tab
+  const assumptionsList = document.getElementById('assumptions-list');
+  assumptionsList.innerHTML = '';
+  if (latestAnalysis.assumptions && latestAnalysis.assumptions.length > 0) {
+    latestAnalysis.assumptions.forEach(assumption => {
+      const li = document.createElement('li');
+      li.textContent = assumption;
+      assumptionsList.appendChild(li);
+    });
+  } else {
+    assumptionsList.innerHTML = '<li style="color:#888;">No assumptions listed</li>';
+  }
+
+  const complianceFlags = document.getElementById('compliance-flags');
+  if (latestAnalysis.compliance && latestAnalysis.compliance.length > 0) {
+    complianceFlags.innerHTML = '<b>Issues Found:</b><ul>' + 
+      latestAnalysis.compliance.map(c => `<li>${c}</li>`).join('') + '</ul>';
+  } else {
+    complianceFlags.innerHTML = '<b style="color:green;">No compliance issues detected</b>';
+  }
+}
+
+function switchAnalysisTab(tabName) {
+  // Update button states
+  const buttons = document.querySelectorAll('.analysis-tab-buttons button');
+  buttons.forEach((btn, idx) => {
+    btn.classList.remove('active');
+    if ((idx === 0 && tabName === 'materials') ||
+        (idx === 1 && tabName === 'uvalues') ||
+        (idx === 2 && tabName === 'wiring') ||
+        (idx === 3 && tabName === 'assumptions')) {
+      btn.classList.add('active');
+    }
+  });
+
+  // Update panel visibility
+  document.querySelectorAll('.analysis-panel').forEach(panel => {
+    panel.classList.remove('active');
+  });
+  document.getElementById(`${tabName}-panel`).classList.add('active');
+}
+
+function editMaterialQuantity(idx) {
+  if (!latestAnalysis || !latestAnalysis.materials || !latestAnalysis.materials[idx]) return;
+  const mat = latestAnalysis.materials[idx];
+  const newQty = prompt(`Edit quantity for "${mat.item}":`, mat.quantity);
+  if (newQty !== null && !isNaN(parseFloat(newQty))) {
+    mat.quantity = parseFloat(newQty);
+    renderAnalysisPanels();
+  }
+}
+
+function recalculateMaterials() {
+  alert('Recalculation feature is a stub. In a full implementation, this would recompute costs based on edited quantities.');
+}
 
 </script>
 </body>
