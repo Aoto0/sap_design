@@ -4,6 +4,16 @@
   <meta charset="UTF-8">
   <title>Saps Design App</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- PDF.js Library -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" 
+          integrity="sha384-OLBgp1GsljhM2TJ+sbHjaiH9txEUvgdDTAzHv2P24donTt6/529l+9Ua0vFImLlb" 
+          crossorigin="anonymous"></script>
+  <script>
+    // Configure PDF.js worker
+    if (typeof pdfjsLib !== 'undefined') {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+  </script>
   <style>
     body { font-family: 'Segoe UI', Arial, sans-serif; background: #f7f9fa; margin: 0; }
     .container { max-width: 400px; margin: 0 auto; background: #fff; min-height: 100vh; box-shadow: 0 4px 24px #0002; }
@@ -48,6 +58,12 @@
       .labour-table, .materials-table, .total-table {font-size:0.93em;}
     }
     .upload-multifiles-note {font-size:0.95em; color:#005599;}
+    .analyze-btn { background: #7b2cbf; color: #fff; border: none; padding: 10px 0; width: 100%; border-radius: 6px; font-size: 0.98em; margin-top: 10px; cursor: pointer; }
+    .analyze-btn:disabled { background: #aaa; cursor: not-allowed; }
+    .spinner { border: 3px solid #f3f3f3; border-top: 3px solid #7b2cbf; border-radius: 50%; width: 16px; height: 16px; animation: spin 1s linear infinite; display: inline-block; margin-left: 8px; vertical-align: middle; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .analysis-banner { background: #e7f0fa; border-left: 4px solid #7b2cbf; padding: 10px; margin: 12px 0; border-radius: 4px; font-size: 0.95em; }
+    .error-toast { background: #f8d7da; border-left: 4px solid #d33; padding: 10px; margin: 12px 0; border-radius: 4px; color: #721c24; font-size: 0.95em; }
   </style>
 </head>
 <body>
@@ -157,6 +173,11 @@
         <div id="plans-note-details" style="display:none; color:#005599; font-size:0.97em; margin-bottom:10px;">
           <b>Fields auto-filled from uploaded plans/spec.</b>
         </div>
+        <div id="analysis-result-banner" class="analysis-banner hidden"></div>
+        <div id="analysis-error-banner" class="error-toast hidden"></div>
+        <button type="button" id="analyze-plans-btn" class="analyze-btn hidden" onclick="analyzePlansForCurrentProject()">
+          🔍 Analyze Plans with Claude (beta)<span id="analyze-spinner" class="spinner hidden"></span>
+        </button>
         <div class="input-group">
           <label for="ceiling-height">Ceiling Height (m)</label>
           <input type="number" id="ceiling-height" min="2" max="5" step="0.01" value="2.4">
@@ -392,6 +413,9 @@ let projects = [], currentProject = null, uvalManual = {floor: false, wall: fals
   spec: null
 };
 
+// Backend configuration - TODO: Set this to your deployed backend URL
+const BACKEND_BASE = ''; // e.g., 'https://your-backend.onrender.com' or 'http://localhost:3000'
+
 function showScreen(id) {
   document.querySelectorAll('.content > *').forEach(e => e.classList.add('hidden'));
   document.getElementById(id).classList.remove('hidden');
@@ -468,8 +492,21 @@ function editProject(idx) {
   windowsData = [{wall:"Front",width:1.2,height:1.2, type:"Double Glazed"}];
   renderWindows();
   showSolarPVInput();
-  if (p.plans && (p.plans.civils || p.plans.ground || p.plans.first || p.plans.spec)) { document.getElementById('plans-note-details').style.display = ''; }
-  else { document.getElementById('plans-note-details').style.display = 'none'; }
+  
+  // Check if plans exist and show analyze button
+  const hasPlans = p.plans && (p.plans.civils || p.plans.ground || p.plans.first || p.plans.spec);
+  if (hasPlans) { 
+    document.getElementById('plans-note-details').style.display = ''; 
+    document.getElementById('analyze-plans-btn').classList.remove('hidden');
+  } else { 
+    document.getElementById('plans-note-details').style.display = 'none'; 
+    document.getElementById('analyze-plans-btn').classList.add('hidden');
+  }
+  
+  // Hide banners on project open
+  document.getElementById('analysis-result-banner').classList.add('hidden');
+  document.getElementById('analysis-error-banner').classList.add('hidden');
+  
   showScreen('project-details-screen');
 }
 function fillUValDropdowns() {
@@ -675,7 +712,7 @@ function generateReport() {
 function handleFileUpload(inputId, listId, key) {
   document.getElementById(inputId).addEventListener('change', function(e) {
     const file = e.target.files[0];
-    uploadedPlans[key] = file ? file.name : null;
+    uploadedPlans[key] = file || null; // Store File object, not filename
     document.getElementById(listId).innerHTML = file ? `<div class='uploaded-file'><b>Uploaded:</b> ${file.name}</div>` : "";
     updatePlansMessage();
   });
@@ -1007,6 +1044,323 @@ document.getElementById('architect-plans-form').onsubmit = function(e) {
   document.getElementById('architect-2d-plan').innerHTML = svg;
   document.getElementById('download-pdf-btn').style.display = "none";
 };
+
+/* --- Claude Vision Integration for Plan Analysis --- */
+
+/**
+ * Convert a File to one or more image data URLs
+ * For PDFs: renders first 1-2 pages to canvas and returns PNG data URLs
+ * For images: reads as data URL and downscales if needed
+ */
+async function fileToImageDataURLs(file) {
+  const MAX_WIDTH = 1920;
+  
+  // Handle PDF files
+  if (file.type === 'application/pdf') {
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      const numPages = Math.min(pdf.numPages, 2); // Max 2 pages
+      const results = [];
+      
+      for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+        const page = await pdf.getPage(pageNum);
+        const viewport = page.getViewport({ scale: 1.5 });
+        
+        // Create canvas
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        
+        // Scale down if too wide
+        let scale = 1.5;
+        if (viewport.width > MAX_WIDTH) {
+          scale = (MAX_WIDTH / viewport.width) * 1.5;
+        }
+        
+        const scaledViewport = page.getViewport({ scale: scale });
+        canvas.width = scaledViewport.width;
+        canvas.height = scaledViewport.height;
+        
+        // Render page
+        await page.render({
+          canvasContext: context,
+          viewport: scaledViewport
+        }).promise;
+        
+        // Convert to data URL and extract base64
+        const dataURL = canvas.toDataURL('image/png');
+        const base64 = dataURL.split(',')[1];
+        
+        results.push({
+          data: base64,
+          media_type: 'image/png',
+          label: pageNum === 1 ? 'first_page' : 'second_page'
+        });
+      }
+      
+      return results;
+    } catch (error) {
+      console.error('Error processing PDF:', error);
+      throw new Error('Failed to process PDF file: ' + error.message);
+    }
+  }
+  
+  // Handle image files
+  if (file.type.startsWith('image/')) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      
+      reader.onload = async (e) => {
+        try {
+          const img = new Image();
+          img.onload = () => {
+            // Create canvas for downscaling
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            let width = img.width;
+            let height = img.height;
+            
+            // Downscale if needed
+            if (width > MAX_WIDTH) {
+              height = (height / width) * MAX_WIDTH;
+              width = MAX_WIDTH;
+            }
+            
+            canvas.width = width;
+            canvas.height = height;
+            ctx.drawImage(img, 0, 0, width, height);
+            
+            // Convert to data URL
+            const dataURL = canvas.toDataURL('image/png');
+            const base64 = dataURL.split(',')[1];
+            
+            resolve([{
+              data: base64,
+              media_type: 'image/png'
+            }]);
+          };
+          
+          img.onerror = () => reject(new Error('Failed to load image'));
+          img.src = e.target.result;
+        } catch (error) {
+          reject(error);
+        }
+      };
+      
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsDataURL(file);
+    });
+  }
+  
+  throw new Error('Unsupported file type: ' + file.type);
+}
+
+/**
+ * Analyze plans for the current project using Claude Vision API
+ */
+async function analyzePlansForCurrentProject() {
+  if (currentProject === null) return;
+  
+  const project = projects[currentProject];
+  if (!project.plans) {
+    showError('No plans uploaded for this project.');
+    return;
+  }
+  
+  // Check if backend is configured
+  if (!BACKEND_BASE) {
+    showError('Backend URL not configured. Please set BACKEND_BASE in the code (see README).');
+    return;
+  }
+  
+  // Collect plan files
+  const planFiles = [];
+  if (project.plans.civils) planFiles.push({ file: project.plans.civils, label: 'civils' });
+  if (project.plans.ground) planFiles.push({ file: project.plans.ground, label: 'ground' });
+  if (project.plans.first) planFiles.push({ file: project.plans.first, label: 'first' });
+  if (project.plans.spec) planFiles.push({ file: project.plans.spec, label: 'spec' });
+  
+  if (planFiles.length === 0) {
+    showError('No plan files found for analysis.');
+    return;
+  }
+  
+  // Show loading state
+  const btn = document.getElementById('analyze-plans-btn');
+  const spinner = document.getElementById('analyze-spinner');
+  btn.disabled = true;
+  spinner.classList.remove('hidden');
+  hideMessages();
+  
+  try {
+    // Convert files to images
+    const allImages = [];
+    for (const planFile of planFiles) {
+      try {
+        const images = await fileToImageDataURLs(planFile.file);
+        // Add label to images
+        images.forEach(img => {
+          img.label = planFile.label;
+          allImages.push(img);
+        });
+      } catch (error) {
+        console.warn(`Failed to process ${planFile.label}:`, error);
+      }
+    }
+    
+    // Cap to 4 images to keep payload reasonable
+    const imagesToSend = allImages.slice(0, 4);
+    
+    if (imagesToSend.length === 0) {
+      throw new Error('Failed to process any plan files. Please check file formats.');
+    }
+    
+    // Call backend API
+    const response = await fetch(BACKEND_BASE + '/api/analyze-plans', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        images: imagesToSend,
+        projectType: project.type
+      })
+    });
+    
+    const data = await response.json();
+    
+    if (!data.ok) {
+      throw new Error(data.error || 'Analysis failed');
+    }
+    
+    // Map results to UI
+    mapAnalysisResultsToUI(data.result);
+    
+  } catch (error) {
+    console.error('Analysis error:', error);
+    showError(error.message || 'Failed to analyze plans. Please try again.');
+  } finally {
+    // Hide loading state
+    btn.disabled = false;
+    spinner.classList.add('hidden');
+  }
+}
+
+/**
+ * Map Claude's analysis results to UI fields
+ */
+function mapAnalysisResultsToUI(result) {
+  let fieldsUpdated = [];
+  
+  // Update floor area
+  if (result.metrics?.floor_area_m2) {
+    document.getElementById('floor-area').value = result.metrics.floor_area_m2;
+    fieldsUpdated.push('Floor Area');
+  }
+  
+  // Update wall area
+  if (result.metrics?.wall_area_m2) {
+    document.getElementById('wall-area').value = result.metrics.wall_area_m2;
+    fieldsUpdated.push('Wall Area');
+  }
+  
+  // Update roof area
+  if (result.metrics?.roof_area_m2) {
+    document.getElementById('roof-area').value = result.metrics.roof_area_m2;
+    fieldsUpdated.push('Roof Area');
+  }
+  
+  // Update ceiling height
+  if (result.metrics?.ceiling_height_m) {
+    document.getElementById('ceiling-height').value = result.metrics.ceiling_height_m;
+    fieldsUpdated.push('Ceiling Height');
+  }
+  
+  // Update number of rooms
+  if (result.rooms && result.rooms.length > 0) {
+    document.getElementById('num-rooms').value = result.rooms.length;
+    fieldsUpdated.push('Number of Rooms');
+  }
+  
+  // Update windows
+  if (result.windows && result.windows.length > 0) {
+    windowsData = result.windows.map(w => ({
+      wall: mapOrientation(w.orientation),
+      width: w.width_m || 1.2,
+      height: w.height_m || 1.2,
+      type: mapWindowType(w.type)
+    }));
+    renderWindows();
+    fieldsUpdated.push('Windows');
+  }
+  
+  // Show success banner
+  const confidence = result.confidence ? Math.round(result.confidence * 100) : 0;
+  const assumptions = result.assumptions && result.assumptions.length > 0 
+    ? '<br><small>Assumptions: ' + result.assumptions.join('; ') + '</small>' 
+    : '';
+  
+  showSuccess(
+    `✅ Auto-filled from plan analysis (Claude): ${fieldsUpdated.join(', ')}. ` +
+    `Confidence: ${confidence}%${assumptions}`
+  );
+}
+
+/**
+ * Map Claude's orientation to our wall names
+ */
+function mapOrientation(orientation) {
+  const map = {
+    'Front': 'Front',
+    'Back': 'Back',
+    'Left': 'Left',
+    'Right': 'Right',
+    'Unknown': 'Front' // Default to Front
+  };
+  return map[orientation] || 'Front';
+}
+
+/**
+ * Map Claude's window type to our types
+ */
+function mapWindowType(type) {
+  const map = {
+    'Double Glazed': 'Double Glazed',
+    'Low E Double Glazed': 'Low E Double Glazed',
+    'Triple Glazed': 'Triple Glazed',
+    'Unknown': 'Double Glazed' // Default
+  };
+  return map[type] || 'Double Glazed';
+}
+
+/**
+ * Show success message banner
+ */
+function showSuccess(message) {
+  const banner = document.getElementById('analysis-result-banner');
+  banner.innerHTML = message;
+  banner.classList.remove('hidden');
+  document.getElementById('analysis-error-banner').classList.add('hidden');
+}
+
+/**
+ * Show error message banner
+ */
+function showError(message) {
+  const banner = document.getElementById('analysis-error-banner');
+  banner.textContent = '❌ ' + message;
+  banner.classList.remove('hidden');
+  document.getElementById('analysis-result-banner').classList.add('hidden');
+}
+
+/**
+ * Hide all message banners
+ */
+function hideMessages() {
+  document.getElementById('analysis-result-banner').classList.add('hidden');
+  document.getElementById('analysis-error-banner').classList.add('hidden');
+}
 
 </script>
 </body>
