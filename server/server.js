@@ -4,8 +4,18 @@
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
 import { deriveFromExtraction } from './lib/postprocess.js';
 import recalc from './lib/recalc.js';
+import { analyzeWithClaude, checkClaudeHealth } from './lib/claudeVision.js';
+
+// Load environment variables
+dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -15,6 +25,10 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+// Serve static files from root directory (one level above /server)
+const rootDir = path.join(__dirname, '..');
+app.use(express.static(rootDir));
+
 // Configure multer for file uploads (images)
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -23,64 +37,60 @@ const upload = multer({
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  const claudeHealth = checkClaudeHealth();
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    claude: claudeHealth
+  });
 });
 
 /**
  * POST /api/analyze-plans
  * Analyzes architectural plans and returns enriched building data
  * 
- * Expected request body:
- * {
- *   "extraction": {
- *     "dimensions": { "floorArea": 100, "wallArea": 200, ... },
- *     "rooms": [{ "name": "Kitchen", "area": 15 }, ...],
- *     "storeys": 2,
- *     "buildingType": "detached",
- *     ...
- *   }
- * }
+ * Accepts three input formats:
+ * 1. JSON with extraction data: { "extraction": {...} }
+ * 2. JSON with images: { "images": [{data: base64, media_type: string}], "projectType": string }
+ * 3. Multipart with file and extraction field
  * 
- * Or with image upload (multipart/form-data):
- * - file: plan image
- * - extraction: JSON string of extraction data
- * 
- * Returns enriched analysis with:
- * - metrics (normalized dimensions)
- * - u_values (thermal performance)
- * - fabric (heat loss calculation)
- * - sap10 (SAP indicators)
- * - materials (quantity estimates)
- * - wiring (electrical allocation)
- * - compliance (Part L checks)
- * - confidence (data quality score)
- * - assumptions (list of assumptions made)
- * - source_raw (original extraction data)
+ * Returns enriched analysis with report and materials
  */
 app.post('/api/analyze-plans', upload.single('file'), async (req, res) => {
   try {
     let rawExtraction;
 
-    // Parse extraction data from request
-    if (req.body.extraction) {
-      // JSON payload or form data with extraction field
+    // Parse extraction data or images from request
+    if (req.body.images && Array.isArray(req.body.images)) {
+      // Format 2: JSON with images array - call Claude Vision API
+      const { images, projectType = 'new-build-house' } = req.body;
+      
+      console.log(`Analyzing ${images.length} images with Claude Vision API...`);
+      rawExtraction = await analyzeWithClaude(images, projectType);
+      console.log('Claude analysis complete');
+      
+    } else if (req.body.extraction) {
+      // Format 1: JSON payload or form data with extraction field
       if (typeof req.body.extraction === 'string') {
         rawExtraction = JSON.parse(req.body.extraction);
       } else {
         rawExtraction = req.body.extraction;
       }
     } else if (req.file) {
-      // File uploaded but no extraction data provided
-      // In real implementation, this would call Claude API or similar
-      // For now, return error as we need extraction data
-      return res.status(400).json({
-        ok: false,
-        error: 'Plan image uploaded but extraction data is required. In production, this would trigger model extraction.'
-      });
+      // Format 3: File uploaded but no extraction data provided
+      // Convert file to base64 and call Claude
+      const base64 = req.file.buffer.toString('base64');
+      const mediaType = req.file.mimetype || 'image/jpeg';
+      const images = [{ data: base64, media_type: mediaType }];
+      
+      console.log(`Analyzing uploaded file with Claude Vision API...`);
+      rawExtraction = await analyzeWithClaude(images, req.body.projectType || 'new-build-house');
+      console.log('Claude analysis complete');
+      
     } else {
       return res.status(400).json({
         ok: false,
-        error: 'Missing extraction data. Please provide extraction object in request body.'
+        error: 'Missing data. Provide extraction object or images array in request body.'
       });
     }
 
@@ -203,6 +213,23 @@ app.get('/api/example', (req, res) => {
     usage: 'POST to /api/analyze-plans with { "extraction": <data> }'
   });
 });
+
+/**
+ * Debug endpoint for static info (only available in non-production)
+ * GET /debug/static-info
+ */
+if (process.env.NODE_ENV !== 'production') {
+  app.get('/debug/static-info', (req, res) => {
+    res.json({
+      environment: process.env.NODE_ENV || 'development',
+      nodeVersion: process.version,
+      port: PORT,
+      claudeConfigured: !!process.env.ANTHROPIC_API_KEY,
+      staticRoot: rootDir,
+      timestamp: new Date().toISOString(),
+    });
+  });
+}
 
 // Error handler
 app.use((err, req, res, next) => {

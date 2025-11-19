@@ -43,13 +43,74 @@ export function deriveFromExtraction(raw) {
   const confidence = computeConfidence(raw);
   const sap10 = calculateSAP10(fabricLossWK, ventLossWK, metrics, confidence);
 
-  // 5) Materials (convert internal quantities to an items array)
-  const materials = buildMaterials(metrics);
+  // 5) Materials - prefer Claude's materials if present, else compute fallback
+  let materials;
+  if (raw?.materials && Array.isArray(raw.materials) && raw.materials.length > 0) {
+    // Pass through Claude's materials, enriching with labour if needed
+    materials = raw.materials.map(m => ({
+      item: m.item || m.description || '',
+      quantity: num(m.quantity || 0),
+      unit: m.unit || '',
+      method: m.method || '',
+      notes: m.notes || '',
+      unit_cost: m.unit_cost ? num(m.unit_cost) : null,
+      labour_hours: m.labour_hours ? num(m.labour_hours) : null,
+      labour_cost_gbp: m.labour_cost_gbp ? num(m.labour_cost_gbp) : null,
+    }));
+  } else {
+    // Fallback: compute from metrics
+    materials = buildMaterials(metrics);
+  }
 
-  // 6) Wiring (list per room)
+  // 6) Report - pass through Claude's report if present, else create empty structure
+  let report;
+  if (raw?.report && typeof raw.report === 'object') {
+    report = {
+      groundworks: Array.isArray(raw.report.groundworks) ? raw.report.groundworks : [],
+      structural_works: Array.isArray(raw.report.structural_works) ? raw.report.structural_works : [],
+      external_envelope: Array.isArray(raw.report.external_envelope) ? raw.report.external_envelope : [],
+      internal_construction: Array.isArray(raw.report.internal_construction) ? raw.report.internal_construction : [],
+      me_electrical: Array.isArray(raw.report.me_electrical) ? raw.report.me_electrical : [],
+      external_works: Array.isArray(raw.report.external_works) ? raw.report.external_works : [],
+      provisional_sums: Array.isArray(raw.report.provisional_sums) ? raw.report.provisional_sums : [],
+      appendices: raw.report.appendices || {
+        method_of_measurement: '',
+        drawings: [],
+        specifications: [],
+        schedules: {
+          windows: [],
+          doors: [],
+          finishes: [],
+        },
+      },
+    };
+  } else {
+    // Create empty report structure
+    report = {
+      groundworks: [],
+      structural_works: [],
+      external_envelope: [],
+      internal_construction: [],
+      me_electrical: [],
+      external_works: [],
+      provisional_sums: [],
+      appendices: {
+        method_of_measurement: '',
+        drawings: [],
+        specifications: [],
+        schedules: {
+          windows: [],
+          doors: [],
+          finishes: [],
+        },
+      },
+    };
+  }
+
+  // 7) Wiring (list per room) - use simple heuristic
   const wiring = buildWiring(raw?.rooms || []);
 
-  // 7) Part L compliance (boolean flags)
+  // 8) Part L compliance (boolean flags)
   const compliance = {
     wall: uValues.wall <= (PART_L_TARGET_U.externalWall ?? PART_L_TARGET_U.wall),
     roof: uValues.roof <= PART_L_TARGET_U.roof,
@@ -58,10 +119,12 @@ export function deriveFromExtraction(raw) {
     door: uValues.door <= (PART_L_TARGET_U.door ?? 1.4),
   };
 
-  // 8) Assumptions
-  const assumptions = generateAssumptions(raw);
+  // 9) Assumptions - generate from raw or use Claude's
+  const assumptions = raw?.assumptions && Array.isArray(raw.assumptions) && raw.assumptions.length > 0
+    ? raw.assumptions
+    : generateAssumptions(raw);
 
-  // 9) Assemble enriched result (frontend-aligned schema)
+  // 10) Assemble enriched result (frontend-aligned schema)
   return {
     metrics,              // { floor_area_m2, wall_area_m2, roof_area_m2, window_area_m2, ceiling_height_m, volume_m3, storeys }
     u_values: uValues,    // { wall, roof, floor, window, door }
@@ -71,7 +134,8 @@ export function deriveFromExtraction(raw) {
       ventilation_heat_loss_wK: round2(ventLossWK),
     },
     sap10,                // { der, ter, der_pass, dfee, tfee, dfee_pass, epc_band, confidence }
-    materials,            // array of { item, quantity, unit, method, labour_hours?, labour_cost_gbp? }
+    materials,            // array of { item, quantity, unit, method, labour_hours?, labour_cost_gbp?, unit_cost? }
+    report,               // grouped BoQ structure from Claude
     wiring,               // array of { room, sockets, light_points, area_m2? }
     compliance,           // { wall, roof, floor, window, door } booleans
     assumptions,
