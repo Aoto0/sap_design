@@ -8,7 +8,7 @@
     "start": "node server.js",
     "dev": "node --watch server.js"
   },
-  "keywords": ["sap", "building-analysis", "architectural-plans"],
+  "keywords": ["sap", "design", "api", "building-analysis", "architectural-plans"],
   "author": "",
   "license": "MIT",
   "dependencies": {
@@ -16,7 +16,11 @@
     "cors": "^2.8.5",
     "multer": "^1.4.5-lts.1"
   },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
   "engines": {
     "node": ">=18.0.0"
+  }
   }
 }

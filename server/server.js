@@ -5,6 +5,7 @@ import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
 import { deriveFromExtraction } from './lib/postprocess.js';
+import recalc from './lib/recalc.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -91,10 +92,6 @@ app.post('/api/analyze-plans', upload.single('file'), async (req, res) => {
       });
     }
 
-    // Note: In a production system, here we would call Claude API or similar
-    // to extract data from uploaded plan images. For this phase, we accept
-    // pre-extracted data for testing and demonstration.
-
     // Process the extraction through our enrichment pipeline
     const enrichedResult = deriveFromExtraction(rawExtraction);
 
@@ -109,6 +106,65 @@ app.post('/api/analyze-plans', upload.single('file'), async (req, res) => {
     res.status(500).json({
       ok: false,
       error: error.message || 'Internal server error during plan analysis'
+    });
+  }
+});
+
+/**
+ * POST /api/recalc
+ * Re-runs post-processing using prior enriched data plus user overrides
+ * Does not call vision model - only reuses existing post-processing logic
+ * 
+ * Request body:
+ * {
+ *   enriched: { ... },      // previously enriched object (latestAnalysis on the client)
+ *   overrides?: {
+ *     metrics?: { floor_area_m2?, wall_area_m2?, roof_area_m2?, window_area_m2?, ceiling_height_m?, storeys? },
+ *     u_values?: { wall?, roof?, floor?, window?, door? },
+ *     materials?: Array<{ index?: number, item?: string, quantity?: number, unit?: string }>,
+ *     wiring?: Array<{ room: string, sockets?: number, light_points?: number }>
+ *   }
+ * }
+ * 
+ * Response:
+ * {
+ *   ok: true,
+ *   result: { ... }  // updated enriched object with recalculated values
+ * }
+ */
+app.post('/api/recalc', async (req, res) => {
+  try {
+    const { enriched, overrides } = req.body || {};
+
+    // Validate request
+    if (!enriched || typeof enriched !== 'object') {
+      return res.status(400).json({
+        ok: false,
+        error: 'Missing required field: enriched'
+      });
+    }
+    if (overrides && typeof overrides !== 'object') {
+      return res.status(400).json({
+        ok: false,
+        error: 'Invalid overrides object'
+      });
+    }
+
+    // Keep payloads small; basic guard
+    const size = JSON.stringify(req.body || {}).length;
+    if (size > 1_000_000) {
+      return res.status(413).json({ ok: false, error: 'Payload too large' });
+    }
+
+    // Apply overrides to enriched data and recalculate
+    const result = await recalc(enriched, overrides || {});
+
+    res.json({ ok: true, result });
+  } catch (error) {
+    console.error('Error in /api/recalc:', error);
+    res.status(500).json({
+      ok: false,
+      error: error.message || 'Internal server error'
     });
   }
 });
@@ -162,6 +218,7 @@ app.listen(PORT, () => {
   console.log(`SAP Design Server running on port ${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/health`);
   console.log(`API endpoint: http://localhost:${PORT}/api/analyze-plans`);
+  console.log(`Recalc endpoint: http://localhost:${PORT}/api/recalc`);
   console.log(`Example: http://localhost:${PORT}/api/example`);
 });
 
