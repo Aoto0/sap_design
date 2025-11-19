@@ -44,7 +44,8 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
-# Node.js server related
-server/node_modules/
-server/npm-debug.log
-server/.env
+# Node.js / Server
+/server/node_modules/
+/server/package-lock.json
+/server/npm-debug.log
+/server/.env
