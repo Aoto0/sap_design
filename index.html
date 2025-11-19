@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <title>Saps Design App</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Inline SVG favicon to avoid 404 -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%23003366' width='100' height='100'/><text y='75' font-size='80' fill='%23fff' font-family='Arial,sans-serif' x='50%' text-anchor='middle'>S</text></svg>">
   <style>
     body { font-family: 'Segoe UI', Arial, sans-serif; background: #f7f9fa; margin: 0; }
     .container { max-width: 400px; margin: 0 auto; background: #fff; min-height: 100vh; box-shadow: 0 4px 24px #0002; }
@@ -70,6 +72,42 @@
     /* Kept from PDF support branch so existing class hooks still look correct */
     .loading-indicator {background:#e7f0fa; padding:12px; border-radius:7px; margin:12px 0; text-align:center; color:#003366;}
     .analyze-btn {background:#007a33 !important; margin-top:15px;}
+    
+    /* BoQ Modal Styles */
+    .modal {display:none;position:fixed;z-index:1000;left:0;top:0;width:100%;height:100%;overflow:auto;background-color:rgba(0,0,0,0.4);}
+    .modal.show {display:block;}
+    .modal-content {background-color:#fefefe;margin:2% auto;padding:20px;border:1px solid #888;width:90%;max-width:900px;border-radius:8px;max-height:85vh;overflow-y:auto;}
+    .modal-header {display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;border-bottom:2px solid #003366;padding-bottom:10px;}
+    .modal-header h2 {margin:0;color:#003366;}
+    .close {color:#aaa;font-size:28px;font-weight:bold;cursor:pointer;line-height:20px;}
+    .close:hover,.close:focus {color:#000;}
+    .boq-section {margin-bottom:20px;border:1px solid #e0e0e0;border-radius:6px;padding:12px;background:#f9f9f9;}
+    .boq-section h3 {margin:0 0 10px 0;color:#003366;font-size:1.1em;border-bottom:1px solid #005599;padding-bottom:5px;}
+    .boq-table {width:100%;border-collapse:collapse;font-size:0.9em;margin-top:8px;}
+    .boq-table th,.boq-table td {padding:6px 8px;border-bottom:1px solid #ddd;text-align:left;}
+    .boq-table th {background:#e7f0fa;font-weight:bold;}
+    .boq-table tr:hover {background:#f5f5f5;}
+    .boq-empty {color:#888;font-style:italic;padding:10px;text-align:center;}
+    
+    /* Pill Buttons */
+    .pill-buttons {display:flex;gap:10px;margin:10px 0;flex-wrap:wrap;}
+    .pill-btn {background:#005599;color:#fff;border:none;padding:8px 16px;border-radius:20px;cursor:pointer;font-size:0.95em;box-shadow:0 2px 4px rgba(0,0,0,0.2);transition:all 0.2s;}
+    .pill-btn:hover {background:#007acc;transform:translateY(-1px);box-shadow:0 3px 6px rgba(0,0,0,0.3);}
+    .pill-btn.secondary {background:#007a33;}
+    .pill-btn.secondary:hover {background:#009944;}
+    
+    /* Badge */
+    .badge {display:inline-block;padding:4px 10px;border-radius:12px;font-size:0.85em;font-weight:bold;margin-left:10px;}
+    .badge.success {background:#d4edda;color:#155724;border:1px solid #c3e6cb;}
+    .badge.warning {background:#fff3cd;color:#856404;border:1px solid #ffc107;}
+    
+    /* Print styles */
+    @media print {
+      .modal {position:static;overflow:visible;}
+      .modal-content {width:100%;margin:0;padding:10px;box-shadow:none;max-height:none;}
+      .close,.pill-buttons {display:none;}
+      body {background:#fff;}
+    }
   </style>
   <!-- PDF.js library for client-side PDF processing -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -202,6 +240,11 @@
             <button onclick="switchAnalysisTab('assumptions')">Assumptions &amp; Compliance</button>
           </div>
           <div id="materials-panel" class="analysis-panel">
+            <div class="pill-buttons">
+              <button class="pill-btn" onclick="openBoQModal()">📋 Open Claude BoQ Report</button>
+              <button class="pill-btn secondary" onclick="openFlatMaterialsReport()">📄 Open Flat Materials Report</button>
+              <span id="boq-badge" class="badge warning" style="display:none;">No grouped BoQ</span>
+            </div>
             <table class="analysis-table">
               <thead><tr><th>Item</th><th>Quantity</th><th>Unit</th><th>Labour Hrs</th><th>Labour Cost (£)</th><th>Method</th><th>Action</th></tr></thead>
               <tbody id="materials-body"></tbody>
@@ -391,6 +434,20 @@
       </div>
     </div>
   </div>
+  
+  <!-- BoQ Modal -->
+  <div id="boq-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Bill of Quantities (BoQ) Report</h2>
+        <span class="close" onclick="closeBoQModal()">&times;</span>
+      </div>
+      <div id="boq-modal-body">
+        <!-- Content will be dynamically populated -->
+      </div>
+    </div>
+  </div>
+  
 <script>
 // Copyright © 2025 Parallax Project Management LTD. All Rights Reserved.
 
@@ -472,6 +529,9 @@ let projects = [], currentProject = null, uvalManual = {floor: false, wall: fals
   first: null,
   spec: null
 }, latestAnalysis = null;
+
+// Expose latestAnalysis globally
+window.latestAnalysis = null;
 
 function showScreen(id) {
   document.querySelectorAll('.content > *').forEach(e => e.classList.add('hidden'));
@@ -1358,6 +1418,7 @@ async function analyzePlansForCurrentProject() {
 
     const result = await response.json();
     latestAnalysis = result;
+    window.latestAnalysis = result; // Expose globally
 
     // Auto-fill fields from analysis result
     if (result.source_raw) {
@@ -1520,6 +1581,11 @@ function renderAnalysisPanels() {
   } else {
     complianceFlags.innerHTML = '<b style="color:green;">No compliance issues detected</b>';
   }
+  
+  // Update BoQ badge
+  if (latestAnalysis.report) {
+    updateBoQBadge(latestAnalysis.report);
+  }
 }
 
 function switchAnalysisTab(tabName) {
@@ -1555,6 +1621,347 @@ function editMaterialQuantity(idx) {
 function recalculateMaterials() {
   alert('Recalculation feature is a stub. In a full implementation, this would recompute costs based on edited quantities.');
 }
+
+/* --- BoQ Modal Functions --- */
+
+/**
+ * Open the BoQ modal with grouped report
+ */
+function openBoQModal() {
+  if (!window.latestAnalysis) {
+    alert('No analysis data available. Please run "Generate BoQ & SAP" first.');
+    return;
+  }
+
+  const modal = document.getElementById('boq-modal');
+  const body = document.getElementById('boq-modal-body');
+
+  // Check if we have a real report from Claude or need synthetic fallback
+  let report = window.latestAnalysis.report;
+  
+  if (!report || !hasGroupedReport(report)) {
+    console.log('No grouped BoQ from Claude, creating synthetic fallback...');
+    report = createSyntheticReport(window.latestAnalysis.materials || []);
+  }
+
+  // Update badge
+  updateBoQBadge(report);
+
+  // Render report sections
+  body.innerHTML = renderBoQReport(report);
+
+  // Show modal
+  modal.classList.add('show');
+}
+
+/**
+ * Close the BoQ modal
+ */
+function closeBoQModal() {
+  const modal = document.getElementById('boq-modal');
+  modal.classList.remove('show');
+}
+
+/**
+ * Check if report has any grouped data
+ */
+function hasGroupedReport(report) {
+  if (!report || typeof report !== 'object') return false;
+  
+  const sections = ['groundworks', 'structural_works', 'external_envelope', 
+                    'internal_construction', 'me_electrical', 'external_works'];
+  
+  return sections.some(section => 
+    Array.isArray(report[section]) && report[section].length > 0
+  );
+}
+
+/**
+ * Create synthetic grouped report from flat materials list
+ */
+function createSyntheticReport(materials) {
+  const report = {
+    groundworks: [],
+    structural_works: [],
+    external_envelope: [],
+    internal_construction: [],
+    me_electrical: [],
+    external_works: [],
+    provisional_sums: [],
+    appendices: {
+      method_of_measurement: 'NRM2 - RICS New Rules of Measurement',
+      drawings: [],
+      specifications: [],
+      schedules: { windows: [], doors: [], finishes: [] }
+    }
+  };
+
+  // Categorize materials into appropriate sections
+  materials.forEach(mat => {
+    const item = (mat.item || '').toLowerCase();
+    const entry = {
+      description: mat.item || '',
+      unit: mat.unit || '',
+      quantity: mat.quantity || 0,
+      method: mat.method || 'Measured',
+      rate: mat.unit_cost || 0,
+      total: (mat.quantity || 0) * (mat.unit_cost || 0),
+      notes: mat.notes || ''
+    };
+
+    // Categorize based on keywords
+    if (item.includes('concrete') || item.includes('foundation') || item.includes('excavat') || item.includes('slab')) {
+      report.groundworks.push(entry);
+    } else if (item.includes('brick') || item.includes('block') || item.includes('beam') || item.includes('column') || item.includes('stair')) {
+      report.structural_works.push(entry);
+    } else if (item.includes('window') || item.includes('door') || item.includes('roof') || item.includes('gutter') || item.includes('fascia') || item.includes('soffit') || item.includes('clad')) {
+      report.external_envelope.push(entry);
+    } else if (item.includes('plaster') || item.includes('ceiling') || item.includes('skirt') || item.includes('paint') || item.includes('partition')) {
+      report.internal_construction.push(entry);
+    } else if (item.includes('electric') || item.includes('plumb') || item.includes('socket') || item.includes('light') || item.includes('radiator') || item.includes('boiler') || item.includes('heat')) {
+      report.me_electrical.push(entry);
+    } else if (item.includes('paving') || item.includes('landscap') || item.includes('fence') || item.includes('drain')) {
+      report.external_works.push(entry);
+    } else {
+      // Default to internal construction
+      report.internal_construction.push(entry);
+    }
+  });
+
+  return report;
+}
+
+/**
+ * Render the BoQ report HTML
+ */
+function renderBoQReport(report) {
+  let html = '<div style="margin-bottom:20px;">';
+  html += '<button class="pill-btn" onclick="printBoQReport()" style="margin-right:10px;">🖨️ Print Report</button>';
+  html += '<button class="pill-btn secondary" onclick="closeBoQModal()">Close</button>';
+  html += '</div>';
+
+  // Render each section
+  const sections = [
+    { key: 'groundworks', title: 'a. Groundworks' },
+    { key: 'structural_works', title: 'b. Structural Works' },
+    { key: 'external_envelope', title: 'c. External Envelope' },
+    { key: 'internal_construction', title: 'd. Internal Construction' },
+    { key: 'me_electrical', title: 'e. Mechanical & Electrical (M&E)' },
+    { key: 'external_works', title: 'f. External Works' }
+  ];
+
+  sections.forEach(section => {
+    html += renderBoQSection(section.title, report[section.key] || []);
+  });
+
+  // Provisional Sums
+  if (report.provisional_sums && report.provisional_sums.length > 0) {
+    html += '<div class="boq-section">';
+    html += '<h3>Provisional Sums</h3>';
+    html += '<table class="boq-table">';
+    html += '<tr><th>Description</th><th>Amount (£)</th><th>Notes</th></tr>';
+    report.provisional_sums.forEach(sum => {
+      html += `<tr>
+        <td>${sum.description || ''}</td>
+        <td>${sum.amount ? '£' + sum.amount.toFixed(2) : 'TBC'}</td>
+        <td>${sum.notes || ''}</td>
+      </tr>`;
+    });
+    html += '</table></div>';
+  }
+
+  // Appendices
+  if (report.appendices) {
+    html += '<div class="boq-section">';
+    html += '<h3>Appendices</h3>';
+    if (report.appendices.method_of_measurement) {
+      html += `<p><b>Method of Measurement:</b> ${report.appendices.method_of_measurement}</p>`;
+    }
+    if (report.appendices.drawings && report.appendices.drawings.length > 0) {
+      html += '<p><b>Drawings:</b> ' + report.appendices.drawings.join(', ') + '</p>';
+    }
+    if (report.appendices.specifications && report.appendices.specifications.length > 0) {
+      html += '<p><b>Specifications:</b> ' + report.appendices.specifications.join(', ') + '</p>';
+    }
+    
+    // Schedules
+    if (report.appendices.schedules) {
+      const schedules = report.appendices.schedules;
+      if (schedules.windows && schedules.windows.length > 0) {
+        html += '<h4>Window Schedule</h4>';
+        html += '<table class="boq-table"><tr><th>ID</th><th>Type</th><th>Size</th><th>Quantity</th></tr>';
+        schedules.windows.forEach(w => {
+          html += `<tr><td>${w.id || ''}</td><td>${w.type || ''}</td><td>${w.size || ''}</td><td>${w.quantity || 1}</td></tr>`;
+        });
+        html += '</table>';
+      }
+      if (schedules.doors && schedules.doors.length > 0) {
+        html += '<h4>Door Schedule</h4>';
+        html += '<table class="boq-table"><tr><th>ID</th><th>Type</th><th>Size</th><th>Quantity</th></tr>';
+        schedules.doors.forEach(d => {
+          html += `<tr><td>${d.id || ''}</td><td>${d.type || ''}</td><td>${d.size || ''}</td><td>${d.quantity || 1}</td></tr>`;
+        });
+        html += '</table>';
+      }
+      if (schedules.finishes && schedules.finishes.length > 0) {
+        html += '<h4>Finishes Schedule</h4>';
+        html += '<table class="boq-table"><tr><th>Room</th><th>Floor</th><th>Wall</th><th>Ceiling</th></tr>';
+        schedules.finishes.forEach(f => {
+          html += `<tr><td>${f.room || ''}</td><td>${f.floor || ''}</td><td>${f.wall || ''}</td><td>${f.ceiling || ''}</td></tr>`;
+        });
+        html += '</table>';
+      }
+    }
+    html += '</div>';
+  }
+
+  return html;
+}
+
+/**
+ * Render a single BoQ section
+ */
+function renderBoQSection(title, items) {
+  let html = '<div class="boq-section">';
+  html += `<h3>${title}</h3>`;
+  
+  if (!items || items.length === 0) {
+    html += '<div class="boq-empty">No items in this section</div>';
+  } else {
+    html += '<table class="boq-table">';
+    html += '<tr><th>Description</th><th>Unit</th><th>Quantity</th><th>Method</th><th>Rate (£)</th><th>Total (£)</th><th>Notes</th></tr>';
+    
+    let sectionTotal = 0;
+    items.forEach(item => {
+      const rate = item.rate || 0;
+      const qty = item.quantity || 0;
+      const total = item.total || (rate * qty);
+      sectionTotal += total;
+      
+      html += `<tr>
+        <td>${item.description || ''}</td>
+        <td>${item.unit || ''}</td>
+        <td>${qty.toFixed(2)}</td>
+        <td>${item.method || ''}</td>
+        <td>${rate > 0 ? rate.toFixed(2) : '-'}</td>
+        <td>${total > 0 ? total.toFixed(2) : '-'}</td>
+        <td>${item.notes || ''}</td>
+      </tr>`;
+    });
+    
+    if (sectionTotal > 0) {
+      html += `<tr style="font-weight:bold;background:#e7f0fa;">
+        <td colspan="5">Section Total</td>
+        <td>£${sectionTotal.toFixed(2)}</td>
+        <td></td>
+      </tr>`;
+    }
+    
+    html += '</table>';
+  }
+  
+  html += '</div>';
+  return html;
+}
+
+/**
+ * Update BoQ badge based on report content
+ */
+function updateBoQBadge(report) {
+  const badge = document.getElementById('boq-badge');
+  if (!badge) return;
+
+  if (hasGroupedReport(report)) {
+    badge.textContent = 'Grouped BoQ Loaded';
+    badge.className = 'badge success';
+  } else {
+    badge.textContent = 'No grouped BoQ';
+    badge.className = 'badge warning';
+  }
+  badge.style.display = 'inline-block';
+}
+
+/**
+ * Open flat materials report in new window
+ */
+function openFlatMaterialsReport() {
+  if (!window.latestAnalysis || !window.latestAnalysis.materials) {
+    alert('No materials data available. Please run "Generate BoQ & SAP" first.');
+    return;
+  }
+
+  const materials = window.latestAnalysis.materials;
+  let html = '<html><head><title>Flat Materials Report</title>';
+  html += '<style>';
+  html += 'body{font-family:Arial,sans-serif;margin:20px;background:#fff;}';
+  html += 'h1{color:#003366;border-bottom:2px solid #003366;padding-bottom:10px;}';
+  html += 'table{width:100%;border-collapse:collapse;margin-top:20px;}';
+  html += 'th,td{border:1px solid #ddd;padding:8px;text-align:left;}';
+  html += 'th{background:#003366;color:#fff;}';
+  html += 'tr:nth-child(even){background:#f2f2f2;}';
+  html += '.total{font-weight:bold;background:#e7f0fa;}';
+  html += '@media print{body{margin:10px;}}';
+  html += '</style></head><body>';
+  
+  html += '<h1>Materials Report</h1>';
+  html += '<p><b>Generated:</b> ' + new Date().toLocaleString() + '</p>';
+  
+  html += '<table>';
+  html += '<thead><tr><th>Item</th><th>Quantity</th><th>Unit</th><th>Method</th><th>Unit Cost (£)</th><th>Total (£)</th><th>Notes</th></tr></thead>';
+  html += '<tbody>';
+  
+  let grandTotal = 0;
+  materials.forEach(mat => {
+    const qty = mat.quantity || 0;
+    const unitCost = mat.unit_cost || 0;
+    const total = qty * unitCost;
+    grandTotal += total;
+    
+    html += `<tr>
+      <td>${mat.item || ''}</td>
+      <td>${qty.toFixed(2)}</td>
+      <td>${mat.unit || ''}</td>
+      <td>${mat.method || ''}</td>
+      <td>${unitCost > 0 ? unitCost.toFixed(2) : '-'}</td>
+      <td>${total > 0 ? total.toFixed(2) : '-'}</td>
+      <td>${mat.notes || ''}</td>
+    </tr>`;
+  });
+  
+  if (grandTotal > 0) {
+    html += `<tr class="total">
+      <td colspan="5">Grand Total</td>
+      <td>£${grandTotal.toFixed(2)}</td>
+      <td></td>
+    </tr>`;
+  }
+  
+  html += '</tbody></table>';
+  html += '<div style="margin-top:30px;padding:15px;background:#fff3cd;border:1px solid #ffc107;border-radius:5px;">';
+  html += '<b>Note:</b> This is a flat list of materials. For grouped Bill of Quantities, use the "Open Claude BoQ Report" button.';
+  html += '</div>';
+  html += '</body></html>';
+
+  const win = window.open('', '_blank');
+  win.document.write(html);
+  win.document.close();
+}
+
+/**
+ * Print the BoQ report
+ */
+function printBoQReport() {
+  window.print();
+}
+
+// Close modal when clicking outside
+window.onclick = function(event) {
+  const modal = document.getElementById('boq-modal');
+  if (event.target === modal) {
+    closeBoQModal();
+  }
+}
+
 
 </script>
 </body>
